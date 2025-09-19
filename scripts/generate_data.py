@@ -112,6 +112,55 @@ def main():
 
     ######## 2.PRODUCTS ########
     ######## 3.STORES ########
+    stores_path = out/'stores.csv'
+    num_stores = apply_scale_to_targets(TARGET_ROWS['stores'], args.scale)
+    store_columns = get_column_names(stores_schema)
+    ensure_dir(stores_path.parent)
+
+    # Define pools
+    channels = ['web', 'pos']
+    # Australian states & regions
+    au_states = ['NSW','VIC','QLD','WA','SA','TAS','ACT','NT']
+    state_to_region = {
+        'NSW': 'East',
+        'VIC': 'South-East',
+        'QLD': 'North-East',
+        'WA': 'West',
+        'SA': 'South',
+        'TAS': 'South',
+        'ACT': 'East',
+        'NT': 'North'
+    }
+
+    # Store code pattern: STR-XXXXX
+    characters = string.ascii_uppercase + string.digits
+
+    with stores_path.open('w', encoding='utf-8') as f:
+        f.write(','.join(store_columns) + '\n')
+        for sid in range(1, num_stores + 1):
+            store_code = 'STR-' + ''.join(random.choices(characters, k=5))
+            name = f"Store {sid}"
+            channel = random.choice(channels)
+            state = random.choice(au_states)
+            region = state_to_region[state]
+            # Normal plausible lat/lon centered roughly around Australia
+            lat = -44 + random.random()*10  # -44 to -34 (approx southern AU)
+            lon = 112 + random.random()*40  # 112 to 152 (AU span)
+            # Inject impossible lat/lon for ~0.3% of rows
+            if random.random() < 0.003:
+                if random.random() < 0.5:
+                    lat = 123.456  # Impossible latitude
+                else:
+                    lon = 987.654  # Impossible longitude
+            # Open date spread over a decade
+            open_dt = date(2015,1,1) + timedelta(days=random.randint(0, 365*10))
+            # ~10% closed stores with valid close date after open date
+            if random.random() < 0.10:
+                close_dt = open_dt + timedelta(days=random.randint(30, 365*5))
+            else:
+                close_dt = ''  # Active store (nullable)
+            f.write(f"{sid},{store_code},{name},{channel},{region},{state},{lat:.6f},{lon:.6f},{open_dt.isoformat()},{close_dt}\n")
+
     ######## 4.SUPPLIERS ########
     suppliers_path = out/'suppliers.csv'
     num_suppliers = apply_scale_to_targets(TARGET_ROWS['suppliers'], args.scale)
@@ -191,6 +240,17 @@ def main():
             print(f"❌ Suppliers validation failed: {error}")
     except Exception as e:
         print(f"❌ Suppliers validation error: {e}")
+
+    # Validate stores data
+    try:
+        stores_table = pacsv.read_csv(out/'stores.csv')
+        is_valid, error = validate_data_against_schema(stores_table.to_pydict(), stores_schema)
+        if is_valid:
+            print(f"✅ Stores data ({num_stores:,} rows) validates against schema")
+        else:
+            print(f"❌ Stores validation failed: {error}")
+    except Exception as e:
+        print(f"❌ Stores validation error: {e}")
     
     print(f"✅ Sample raw written to {out}. Expand to required volumes per /docs.")
 if __name__ == '__main__':
