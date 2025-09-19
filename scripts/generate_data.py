@@ -116,11 +116,11 @@ def main():
     # Centralize all raw output paths
     paths = {
         'customers': out / 'customers.csv',
+        'products': out / 'products.csv',
         'stores': out / 'stores.csv',
         'suppliers': out / 'suppliers.csv',
         'shipments': out / 'shipments.parquet',
         # Future datasets placeholders (uncomment/extend when implemented):
-        # 'products': out / 'products.csv',
         # 'orders_header': out / 'orders_header.csv',
         # 'orders_lines': out / 'orders_lines.csv',
         # 'events': out / 'events.csv',
@@ -151,6 +151,79 @@ def main():
             f.write(f"{i},{nk},{fake.first_name()},{fake.last_name()},{email},{fake.phone_number().replace(',',' ')},{fake.street_address().replace(',',' ')},,{fake.city().replace(',',' ')},{fake.state_abbr()},{fake.postcode()},AU,{lat:.6f},{lon:.6f},{birth.isoformat()},{join_ts.isoformat()},{str(random.random()<0.15)},{str(random.random()>0.05)}\n")
 
     ######## 2.PRODUCTS ########
+    products_path = paths['products']
+    num_products = apply_scale_to_targets(TARGET_ROWS['products'], args.scale)
+    product_cols = get_column_names(products_schema)
+    ensure_dir(products_path.parent)
+
+    # Category/Subcategory pools (simple hierarchy)
+    category_hierarchy = {
+        'Electronics': ['Phones', 'Laptops', 'Audio', 'Gaming'],
+        'Home': ['Kitchen', 'Furniture', 'Decor'],
+        'Apparel': ['Mens', 'Womens', 'Kids'],
+        'Sports': ['Outdoor', 'Fitness', 'Team'],
+        'Beauty': ['Skincare', 'Makeup', 'Hair']
+    }
+    categories = list(category_hierarchy.keys())
+    characters = string.ascii_uppercase + string.digits
+
+    price_anomaly_rate = 0.005
+    num_price_anomalies = max(1, int(num_products * price_anomaly_rate))
+    anomaly_indices = set(random.sample(range(1, num_products + 1), num_price_anomalies))
+
+    with products_path.open('w', encoding='utf-8') as f:
+        f.write(','.join(product_cols) + '\n')
+        for pid in range(1, num_products + 1):
+            sku = 'SKU-' + ''.join(random.choices(characters, k=6))
+            cat = random.choice(categories)
+            subcat = random.choice(category_hierarchy[cat])
+            name = f"{cat} {subcat} Item {pid}"
+            introduced = date.today() - timedelta(days=random.randint(0, 365 * 5))
+            # 10% discontinued products
+            is_disc = random.random() < 0.10
+            if is_disc:
+                # 20% of discontinued missing discontinued_dt (anomaly for business rule)
+                if random.random() < 0.20:
+                    discontinued_dt = ''
+                else:
+                    discontinued_dt = introduced + timedelta(days=random.randint(30, 365*2))
+                    # Guard future date overshoot
+                    if discontinued_dt > date.today():
+                        discontinued_dt = date.today() - timedelta(days=random.randint(0,30))
+            else:
+                discontinued_dt = ''
+
+            # Base price distribution by category (rough ranges)
+            base_ranges = {
+                'Electronics': (49, 1999),
+                'Home': (9, 799),
+                'Apparel': (5, 299),
+                'Sports': (10, 499),
+                'Beauty': (3, 249)
+            }
+            low, high = base_ranges[cat]
+            price_val = random.uniform(low, high)
+            # Currency skew toward AUD with some USD/EUR
+            currency = random.choices(['AUD','USD','EUR'], weights=[0.8,0.15,0.05])[0]
+
+            # Inject price anomalies (missing or invalid). If pid in anomaly_indices:
+            if pid in anomaly_indices:
+                if random.random() < 0.5:
+                    # Missing (empty string) -> will break strict decimal parse; accepted as anomaly
+                    price_str = ''
+                else:
+                    # Invalid numeric (negative or too many decimals)
+                    if random.random() < 0.5:
+                        price_str = f"-{price_val:.4f}"  # negative
+                    else:
+                        price_str = f"{price_val:.6f}"   # too many decimals for scale=4
+            else:
+                price_str = f"{price_val:.4f}"  # Valid scale 4
+
+            f.write(
+                f"{pid},{sku},{name},{cat},{subcat},{price_str},{currency},{str(is_disc)},{introduced.isoformat()},{discontinued_dt}\n"
+            )
+
     ######## 3.STORES ########
     stores_path = paths['stores']
     num_stores = apply_scale_to_targets(TARGET_ROWS['stores'], args.scale)
@@ -252,6 +325,7 @@ def main():
 
     validations = [
         ("Customers", paths['customers'], customers_schema, 'csv'),
+        ("Products", paths['products'], products_schema, 'csv'),
         ("Stores", paths['stores'], stores_schema, 'csv'),
         ("Suppliers", paths['suppliers'], suppliers_schema, 'csv'),
         ("Shipments", paths['shipments'], shipments_schema, 'parquet'),
