@@ -90,10 +90,9 @@ def main():
     out = pathlib.Path(args.out); ensure_dir(out)
 
     # Minimal sample generation (expand to full volumes per docs)
-    # Generate customers data using schema integration
+    ######## 1.CUSTOMERS ########
     fake = Faker('en_AU')
     num_customers = apply_scale_to_targets(TARGET_ROWS['customers'], args.scale)
-    
     customers_path = out/'customers.csv'
     column_names = get_column_names(customers_schema)
     
@@ -111,6 +110,15 @@ def main():
             join_ts = datetime(2024,1,1) + timedelta(days=random.randint(0, 400), seconds=random.randint(0, 86399))
             f.write(f"{i},{nk},{fake.first_name()},{fake.last_name()},{email},{fake.phone_number().replace(',',' ')},{fake.street_address().replace(',',' ')},,{fake.city().replace(',',' ')},{fake.state_abbr()},{fake.postcode()},AU,{lat:.6f},{lon:.6f},{birth.isoformat()},{join_ts.isoformat()},{str(random.random()<0.15)},{str(random.random()>0.05)}\n")
 
+    ######## 2.PRODUCTS ########
+    ######## 3.STORES ########
+    ######## 4.SUPPLIERS ########
+    ######## 5.ORDERS HEADER ########
+    ######## 6.ORDERS LINES ########
+    ######## 7.EVENTS ########
+    ######## 8.SENSORS ########
+    ######## 9.EXCHANGE RATES ########
+    ######## 10.SHIPMENTS ########
     # Shipments parquet sample with schema integration and weighted random shipping costs
     num_shipments = apply_scale_to_targets(TARGET_ROWS['shipments'], args.scale)
     
@@ -127,6 +135,7 @@ def main():
         'ship_cost': pa.array([Decimal(f"{cost:.2f}") for cost in costs], type=pa.decimal128(12,2)),
     })
     pq.write_table(tbl, out/'shipments.parquet', compression='snappy')
+
 
     # Schema validation for generated data
     print(f"🔍 Validating generated data against schemas...")
