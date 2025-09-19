@@ -11,9 +11,16 @@ import pyarrow.parquet as pq
 import xlsxwriter
 
 def parse_args():
-    ap = argparse.ArgumentParser()
-    ap.add_argument('--seed', type=int, default=42)
-    ap.add_argument('--out', type=str, default='data_raw')
+    ap = argparse.ArgumentParser(
+        description='Generate synthetic retail data with controlled anomalies',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+    ap.add_argument('--seed', type=int, default=42,
+                    help='Random seed for reproducible data generation')
+    ap.add_argument('--out', type=str, default='data_raw',
+                    help='Output directory for generated data')
+    ap.add_argument('--scale', type=float, default=1.0,
+                    help='Scaling factor for data volumes (e.g., 0.01 for 1%% of target rows)')
     return ap.parse_args()
 
 def ensure_dir(p): pathlib.Path(p).mkdir(parents=True, exist_ok=True)
