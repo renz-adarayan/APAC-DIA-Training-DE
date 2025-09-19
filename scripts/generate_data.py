@@ -11,6 +11,7 @@ import pyarrow as pa
 import pyarrow.csv as pacsv
 import pyarrow.parquet as pq
 import xlsxwriter
+import string
 
 # --- Package import bootstrap -------------------------------------------------
 # Ensure project root is on sys.path so that `schemas` package resolves even if
@@ -99,7 +100,10 @@ def main():
     with customers_path.open('w', encoding='utf-8') as f:
         f.write(','.join(column_names) + '\n')
         for i in range(1, num_customers + 1):
-            nk = 'CUST-' + rstr.rstr('A-Z0-9', 8)
+            # Natural key must follow pattern CUST-[A-Z0-9]{8}. Using explicit uppercase alphanumerics
+            characters = string.ascii_uppercase + string.digits
+            random_suffix = ''.join(random.choices(characters, k=8))
+            nk = f"CUST-{random_suffix}"
             # Inject anomalies: 0.5-1% malformed emails
             email = fake.email() if random.random() > 0.008 else 'bad_email'
             lat = -44 + random.random()*10; lon = 112 + random.random()*40
