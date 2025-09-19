@@ -1,6 +1,6 @@
 # Generate synthetic raw data locally with controlled edge cases.
 # Usage: python scripts/generate_data.py --seed 42 --out data_raw
-import argparse, os, pathlib, random
+import argparse, os, pathlib, random, sys
 from datetime import datetime, timedelta, date
 from decimal import Decimal
 import numpy as np
@@ -11,12 +11,25 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import xlsxwriter
 
-# Import all schemas from schemas.py
-from schemas.schemas import (
-    customers_schema, products_schema, stores_schema, suppliers_schema,
-    orders_header_schema, orders_lines_schema, events_schema, sensors_schema,
-    exchange_rates_schema, shipments_schema, returns_day1_schema
-)
+# --- Package import bootstrap -------------------------------------------------
+# Ensure project root is on sys.path so that `schemas` package resolves even if
+# the script is invoked directly via `python scripts/generate_data.py`.
+PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+try:
+    from schemas import (
+        customers_schema, products_schema, stores_schema, suppliers_schema,
+        orders_header_schema, orders_lines_schema, events_schema, sensors_schema,
+        exchange_rates_schema, shipments_schema, returns_day1_schema,
+    )
+except ModuleNotFoundError as e:
+    # Provide clearer diagnostic information before failing hard.
+    raise ModuleNotFoundError(
+        "Failed to import 'schemas'. Confirm that 'schemas/__init__.py' exists and that you are running the script from the project root. "
+        f"sys.path (first 5 entries): {sys.path[:5]} | Project root: {PROJECT_ROOT}"
+    ) from e
 
 TARGET_ROWS = {
     'customers': 80_000,
@@ -75,13 +88,19 @@ def main():
     out = pathlib.Path(args.out); ensure_dir(out)
 
     # Minimal sample generation (expand to full volumes per docs)
+    # Generate customers data using schema integration
     fake = Faker('en_AU')
+    num_customers = apply_scale_to_targets(TARGET_ROWS['customers'], args.scale)
+    
     customers_path = out/'customers.csv'
+    column_names = get_column_names(customers_schema)
+    
     with customers_path.open('w', encoding='utf-8') as f:
-        f.write('customer_id,natural_key,first_name,last_name,email,phone,address_line1,address_line2,city,state_region,postcode,country_code,latitude,longitude,birth_date,join_ts,is_vip,gdpr_consent\n')
-        for i in range(1, 1001):  # TODO raise to 80_000
+        f.write(','.join(column_names) + '\n')
+        for i in range(1, num_customers + 1):
             nk = 'CUST-' + rstr.rstr('A-Z0-9', 8)
-            email = fake.email() if random.random()>0.1 else 'bad_email'
+            # Inject anomalies: 0.5-1% malformed emails
+            email = fake.email() if random.random() > 0.008 else 'bad_email'
             lat = -44 + random.random()*10; lon = 112 + random.random()*40
             birth = date(1960,1,1) + timedelta(days=random.randint(0, 20000))
             join_ts = datetime(2024,1,1) + timedelta(days=random.randint(0, 400), seconds=random.randint(0, 86399))
