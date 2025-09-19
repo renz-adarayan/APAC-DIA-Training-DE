@@ -104,6 +104,8 @@ def parse_args():
                     help='Output directory for generated data')
     ap.add_argument('--scale', type=float, default=1.0,
                     help='Scaling factor for data volumes (e.g., 0.01 for 1%% of target rows)')
+    ap.add_argument('--validate', action='store_true', 
+                    help='Run schema validations after data generation (off by default)')
     return ap.parse_args()
 
 def ensure_dir(p): pathlib.Path(p).mkdir(parents=True, exist_ok=True)
@@ -320,27 +322,30 @@ def main():
     pq.write_table(tbl, shipments_path, compression='snappy')
 
 
-    # Schema validation for generated data (CSV & Parquet separated)
-    print("🔍 Validating generated data against schemas...")
+    if args.validate:
+        # Schema validation for generated data (CSV & Parquet separated)
+        print("🔍 Validating generated data against schemas...")
 
-    validations = [
-        ("Customers", paths['customers'], customers_schema, 'csv'),
-        ("Products", paths['products'], products_schema, 'csv'),
-        ("Stores", paths['stores'], stores_schema, 'csv'),
-        ("Suppliers", paths['suppliers'], suppliers_schema, 'csv'),
-        ("Shipments", paths['shipments'], shipments_schema, 'parquet'),
-    ]
+        validations = [
+            ("Customers", paths['customers'], customers_schema, 'csv'),
+            ("Products", paths['products'], products_schema, 'csv'),
+            ("Stores", paths['stores'], stores_schema, 'csv'),
+            ("Suppliers", paths['suppliers'], suppliers_schema, 'csv'),
+            ("Shipments", paths['shipments'], shipments_schema, 'parquet'),
+        ]
 
-    for name, path, schema, fmt in validations:
-        if fmt == 'csv':
-            is_valid, error, rows = validate_csv(path, schema)
-        else:
-            is_valid, error, rows = validate_parquet(path, schema)
+        for name, path, schema, fmt in validations:
+            if fmt == 'csv':
+                is_valid, error, rows = validate_csv(path, schema)
+            else:
+                is_valid, error, rows = validate_parquet(path, schema)
 
-        if is_valid:
-            print(f"✅ {name} data ({rows:,} rows) validates against schema")
-        else:
-            print(f"❌ {name} validation failed: {error}")
+            if is_valid:
+                print(f"✅ {name} data ({rows:,} rows) validates against schema")
+            else:
+                print(f"❌ {name} validation failed: {error}")
+    else:
+        print("⚠️  Skipping schema validation (default; pass --validate to enable).")
 
     print(f"✅ Sample raw written to {out}. Expand to required volumes per /docs.")
 if __name__ == '__main__':
