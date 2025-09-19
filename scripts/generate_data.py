@@ -8,6 +8,7 @@ from faker import Faker
 from mimesis import Person, Address
 import rstr
 import pyarrow as pa
+import pyarrow.csv as pacsv
 import pyarrow.parquet as pq
 import xlsxwriter
 
@@ -123,6 +124,31 @@ def main():
     })
     pq.write_table(tbl, out/'shipments.parquet', compression='snappy')
 
+    # Schema validation for generated data
+    print(f"🔍 Validating generated data against schemas...")
+    
+    # Validate customers data
+    try:
+        customers_table = pacsv.read_csv(customers_path)
+        is_valid, error = validate_data_against_schema(customers_table.to_pydict(), customers_schema)
+        if is_valid:
+            print(f"✅ Customers data ({num_customers:,} rows) validates against schema")
+        else:
+            print(f"❌ Customers validation failed: {error}")
+    except Exception as e:
+        print(f"❌ Customers validation error: {e}")
+    
+    # Validate shipments data
+    try:
+        shipments_table = pq.read_table(out/'shipments.parquet')
+        is_valid, error = validate_data_against_schema(shipments_table.to_pydict(), shipments_schema)
+        if is_valid:
+            print(f"✅ Shipments data ({num_shipments:,} rows) validates against schema")
+        else:
+            print(f"❌ Shipments validation failed: {error}")
+    except Exception as e:
+        print(f"❌ Shipments validation error: {e}")
+    
     print(f"✅ Sample raw written to {out}. Expand to required volumes per /docs.")
 if __name__ == '__main__':
     main()
