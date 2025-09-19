@@ -2,6 +2,7 @@
 # Usage: python scripts/generate_data.py --seed 42 --out data_raw
 import argparse, os, pathlib, random
 from datetime import datetime, timedelta, date
+from decimal import Decimal
 import numpy as np
 from faker import Faker
 from mimesis import Person, Address
@@ -50,7 +51,7 @@ def main():
         'carrier': pa.array(['AUSPOST']*10000, type=pa.string()),
         'shipped_at': pa.array([datetime(2024,1,1)+timedelta(days=i%90) for i in range(10000)], type=pa.timestamp('us')),
         'delivered_at': pa.array([datetime(2024,1,2)+timedelta(days=i%90) for i in range(10000)], type=pa.timestamp('us')),
-        'ship_cost': pa.array([1995]*10000, type=pa.int64()).cast(pa.decimal128(12,2)),
+        'ship_cost': pa.array([Decimal('19.95')]*10000, type=pa.decimal128(12,2)), # TODO: vary costs with more bias towards low shipping fees
     })
     pq.write_table(tbl, out/'shipments.parquet', compression='snappy')
 
