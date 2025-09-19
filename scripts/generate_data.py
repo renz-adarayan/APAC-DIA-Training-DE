@@ -106,14 +106,20 @@ def main():
             join_ts = datetime(2024,1,1) + timedelta(days=random.randint(0, 400), seconds=random.randint(0, 86399))
             f.write(f"{i},{nk},{fake.first_name()},{fake.last_name()},{email},{fake.phone_number().replace(',',' ')},{fake.street_address().replace(',',' ')},,{fake.city().replace(',',' ')},{fake.state_abbr()},{fake.postcode()},AU,{lat:.6f},{lon:.6f},{birth.isoformat()},{join_ts.isoformat()},{str(random.random()<0.15)},{str(random.random()>0.05)}\n")
 
-    # Shipments parquet sample
+    # Shipments parquet sample with schema integration and weighted random shipping costs
+    num_shipments = apply_scale_to_targets(TARGET_ROWS['shipments'], args.scale)
+    
+    # Generate shipping costs with beta distribution (weighted toward lower costs)
+    weights = np.random.beta(2, 5, num_shipments)  # Shape parameters favor lower values
+    costs = 4.99 + weights * (49.99 - 4.99)  # Scale to $4.99-$49.99 range
+    
     tbl = pa.table({
-        'shipment_id': pa.array(range(1, 10001), type=pa.int64()),
-        'order_id': pa.array(range(1, 10001), type=pa.int64()),
-        'carrier': pa.array(['AUSPOST']*10000, type=pa.string()),
-        'shipped_at': pa.array([datetime(2024,1,1)+timedelta(days=i%90) for i in range(10000)], type=pa.timestamp('us')),
-        'delivered_at': pa.array([datetime(2024,1,2)+timedelta(days=i%90) for i in range(10000)], type=pa.timestamp('us')),
-        'ship_cost': pa.array([Decimal('19.95')]*10000, type=pa.decimal128(12,2)), # TODO: vary costs with more bias towards low shipping fees
+        'shipment_id': pa.array(range(1, num_shipments + 1), type=pa.int64()),
+        'order_id': pa.array(range(1, num_shipments + 1), type=pa.int64()),
+        'carrier': pa.array(['AUSPOST'] * num_shipments, type=pa.string()),
+        'shipped_at': pa.array([datetime(2024,1,1)+timedelta(days=i%90) for i in range(num_shipments)], type=pa.timestamp('us')),
+        'delivered_at': pa.array([datetime(2024,1,2)+timedelta(days=i%90) for i in range(num_shipments)], type=pa.timestamp('us')),
+        'ship_cost': pa.array([Decimal(f"{cost:.2f}") for cost in costs], type=pa.decimal128(12,2)),
     })
     pq.write_table(tbl, out/'shipments.parquet', compression='snappy')
 
