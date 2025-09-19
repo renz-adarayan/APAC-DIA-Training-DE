@@ -69,6 +69,30 @@ def validate_data_against_schema(data_dict, schema):
     except Exception as e:
         return False, str(e)
 
+def validate_csv(path: pathlib.Path, schema: pa.Schema):
+    """Read a CSV file at path and validate against provided PyArrow schema.
+
+    Returns (is_valid, error_message, row_count).
+    """
+    try:
+        table = pacsv.read_csv(path)
+        is_valid, error = validate_data_against_schema(table.to_pydict(), schema)
+        return is_valid, error, table.num_rows
+    except Exception as e:
+        return False, str(e), 0
+
+def validate_parquet(path: pathlib.Path, schema: pa.Schema):
+    """Read a Parquet file at path and validate against provided PyArrow schema.
+
+    Returns (is_valid, error_message, row_count).
+    """
+    try:
+        table = pq.read_table(path)
+        is_valid, error = validate_data_against_schema(table.to_pydict(), schema)
+        return is_valid, error, table.num_rows
+    except Exception as e:
+        return False, str(e), 0
+
 def parse_args():
     ap = argparse.ArgumentParser(
         description='Generate synthetic retail data with controlled anomalies',
@@ -89,11 +113,27 @@ def main():
     random.seed(args.seed); np.random.seed(args.seed)
     out = pathlib.Path(args.out); ensure_dir(out)
 
+    # Centralize all raw output paths
+    paths = {
+        'customers': out / 'customers.csv',
+        'stores': out / 'stores.csv',
+        'suppliers': out / 'suppliers.csv',
+        'shipments': out / 'shipments.parquet',
+        # Future datasets placeholders (uncomment/extend when implemented):
+        # 'products': out / 'products.csv',
+        # 'orders_header': out / 'orders_header.csv',
+        # 'orders_lines': out / 'orders_lines.csv',
+        # 'events': out / 'events.csv',
+        # 'sensors': out / 'sensors.csv',
+        # 'exchange_rates': out / 'exchange_rates.csv',
+        # 'returns': out / 'returns_day1.csv',
+    }
+
     # Minimal sample generation (expand to full volumes per docs)
     ######## 1.CUSTOMERS ########
     fake = Faker('en_AU')
     num_customers = apply_scale_to_targets(TARGET_ROWS['customers'], args.scale)
-    customers_path = out/'customers.csv'
+    customers_path = paths['customers']
     column_names = get_column_names(customers_schema)
     
     with customers_path.open('w', encoding='utf-8') as f:
@@ -112,7 +152,7 @@ def main():
 
     ######## 2.PRODUCTS ########
     ######## 3.STORES ########
-    stores_path = out/'stores.csv'
+    stores_path = paths['stores']
     num_stores = apply_scale_to_targets(TARGET_ROWS['stores'], args.scale)
     store_columns = get_column_names(stores_schema)
     ensure_dir(stores_path.parent)
@@ -162,7 +202,7 @@ def main():
             f.write(f"{sid},{store_code},{name},{channel},{region},{state},{lat:.6f},{lon:.6f},{open_dt.isoformat()},{close_dt}\n")
 
     ######## 4.SUPPLIERS ########
-    suppliers_path = out/'suppliers.csv'
+    suppliers_path = paths['suppliers']
     num_suppliers = apply_scale_to_targets(TARGET_ROWS['suppliers'], args.scale)
     supplier_columns = get_column_names(suppliers_schema)
     country_pool = ['AU','AU','AU','US','US','CN','DE','JP','NZ','IN','SG']  # Weighted toward AU/US
@@ -189,6 +229,8 @@ def main():
     ######## 10.SHIPMENTS ########
     # Shipments parquet sample with schema integration and weighted random shipping costs
     num_shipments = apply_scale_to_targets(TARGET_ROWS['shipments'], args.scale)
+    # Centralize shipments path to avoid hardcoding in multiple places
+    shipments_path = paths['shipments']
     
     # Generate shipping costs with beta distribution (weighted toward lower costs)
     weights = np.random.beta(2, 5, num_shipments)  # Shape parameters favor lower values
@@ -202,56 +244,30 @@ def main():
         'delivered_at': pa.array([datetime(2024,1,2)+timedelta(days=i%90) for i in range(num_shipments)], type=pa.timestamp('us')),
         'ship_cost': pa.array([Decimal(f"{cost:.2f}") for cost in costs], type=pa.decimal128(12,2)),
     })
-    pq.write_table(tbl, out/'shipments.parquet', compression='snappy')
+    pq.write_table(tbl, shipments_path, compression='snappy')
 
 
-    # Schema validation for generated data
-    print(f"🔍 Validating generated data against schemas...")
-    
-    # Validate customers data
-    try:
-        customers_table = pacsv.read_csv(customers_path)
-        is_valid, error = validate_data_against_schema(customers_table.to_pydict(), customers_schema)
-        if is_valid:
-            print(f"✅ Customers data ({num_customers:,} rows) validates against schema")
-        else:
-            print(f"❌ Customers validation failed: {error}")
-    except Exception as e:
-        print(f"❌ Customers validation error: {e}")
-    
-    # Validate shipments data
-    try:
-        shipments_table = pq.read_table(out/'shipments.parquet')
-        is_valid, error = validate_data_against_schema(shipments_table.to_pydict(), shipments_schema)
-        if is_valid:
-            print(f"✅ Shipments data ({num_shipments:,} rows) validates against schema")
-        else:
-            print(f"❌ Shipments validation failed: {error}")
-    except Exception as e:
-        print(f"❌ Shipments validation error: {e}")
+    # Schema validation for generated data (CSV & Parquet separated)
+    print("🔍 Validating generated data against schemas...")
 
-    # Validate suppliers data
-    try:
-        suppliers_table = pacsv.read_csv(suppliers_path)
-        is_valid, error = validate_data_against_schema(suppliers_table.to_pydict(), suppliers_schema)
-        if is_valid:
-            print(f"✅ Suppliers data ({num_suppliers:,} rows) validates against schema")
-        else:
-            print(f"❌ Suppliers validation failed: {error}")
-    except Exception as e:
-        print(f"❌ Suppliers validation error: {e}")
+    validations = [
+        ("Customers", paths['customers'], customers_schema, 'csv'),
+        ("Stores", paths['stores'], stores_schema, 'csv'),
+        ("Suppliers", paths['suppliers'], suppliers_schema, 'csv'),
+        ("Shipments", paths['shipments'], shipments_schema, 'parquet'),
+    ]
 
-    # Validate stores data
-    try:
-        stores_table = pacsv.read_csv(out/'stores.csv')
-        is_valid, error = validate_data_against_schema(stores_table.to_pydict(), stores_schema)
-        if is_valid:
-            print(f"✅ Stores data ({num_stores:,} rows) validates against schema")
+    for name, path, schema, fmt in validations:
+        if fmt == 'csv':
+            is_valid, error, rows = validate_csv(path, schema)
         else:
-            print(f"❌ Stores validation failed: {error}")
-    except Exception as e:
-        print(f"❌ Stores validation error: {e}")
-    
+            is_valid, error, rows = validate_parquet(path, schema)
+
+        if is_valid:
+            print(f"✅ {name} data ({rows:,} rows) validates against schema")
+        else:
+            print(f"❌ {name} validation failed: {error}")
+
     print(f"✅ Sample raw written to {out}. Expand to required volumes per /docs.")
 if __name__ == '__main__':
     main()
