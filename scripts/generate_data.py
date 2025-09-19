@@ -32,6 +32,28 @@ TARGET_ROWS = {
     'returns': 100_000
 }
 
+# Schema utility functions
+def get_schema_columns(schema):
+    """Extract column names and types from PyArrow schema"""
+    return [(field.name, field.type) for field in schema]
+
+def get_column_names(schema):
+    """Get just the column names from a schema"""
+    return [field.name for field in schema]
+
+def apply_scale_to_targets(base_count, scale):
+    """Apply scaling factor to target row counts"""
+    return max(1, int(base_count * scale))
+
+def validate_data_against_schema(data_dict, schema):
+    """Validate that generated data matches schema expectations"""
+    try:
+        table = pa.table(data_dict)
+        casted = table.cast(schema)
+        return True, None
+    except Exception as e:
+        return False, str(e)
+
 def parse_args():
     ap = argparse.ArgumentParser(
         description='Generate synthetic retail data with controlled anomalies',
