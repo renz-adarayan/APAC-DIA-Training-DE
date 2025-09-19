@@ -11,6 +11,27 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import xlsxwriter
 
+# Import all schemas from schemas.py
+from schemas.schemas import (
+    customers_schema, products_schema, stores_schema, suppliers_schema,
+    orders_header_schema, orders_lines_schema, events_schema, sensors_schema,
+    exchange_rates_schema, shipments_schema, returns_day1_schema
+)
+
+TARGET_ROWS = {
+    'customers': 80_000,
+    'products': 25_000, 
+    'stores': 5_000,
+    'suppliers': 8_000,
+    'orders_header': 1_000_000,
+    'orders_lines': 3_500_000,  # 3-4M average
+    'events': 2_000_000,
+    'sensors': 7_500_000,  # 5-10M range
+    'exchange_rates': 1_100,  # ~3 years daily
+    'shipments': 1_000_000,
+    'returns': 100_000
+}
+
 def parse_args():
     ap = argparse.ArgumentParser(
         description='Generate synthetic retail data with controlled anomalies',
