@@ -113,6 +113,25 @@ def main():
     ######## 2.PRODUCTS ########
     ######## 3.STORES ########
     ######## 4.SUPPLIERS ########
+    suppliers_path = out/'suppliers.csv'
+    num_suppliers = apply_scale_to_targets(TARGET_ROWS['suppliers'], args.scale)
+    supplier_columns = get_column_names(suppliers_schema)
+    country_pool = ['AU','AU','AU','US','US','CN','DE','JP','NZ','IN','SG']  # Weighted toward AU/US
+    characters = string.ascii_uppercase + string.digits
+
+    with suppliers_path.open('w', encoding='utf-8') as f:
+        f.write(','.join(supplier_columns) + '\n')
+        for sid in range(1, num_suppliers + 1):
+            # Supplier code pattern SUP-XXXXXX (alphanumeric uppercase)
+            code = 'SUP-' + ''.join(random.choices(characters, k=6))
+            name = f"{fake.company().replace(',', ' ')}"
+            country = random.choice(country_pool)
+            # Lead time: normal-ish distribution
+            base_lt = int(np.clip(np.random.normal(25, 12), 1, 90))
+            preferred_flag = random.random() < 0.30
+            preferred_val = str(preferred_flag)
+            f.write(f"{sid},{code},{name},{country},{base_lt},{preferred_val}\n")
+
     ######## 5.ORDERS HEADER ########
     ######## 6.ORDERS LINES ########
     ######## 7.EVENTS ########
@@ -161,6 +180,17 @@ def main():
             print(f"❌ Shipments validation failed: {error}")
     except Exception as e:
         print(f"❌ Shipments validation error: {e}")
+
+    # Validate suppliers data
+    try:
+        suppliers_table = pacsv.read_csv(suppliers_path)
+        is_valid, error = validate_data_against_schema(suppliers_table.to_pydict(), suppliers_schema)
+        if is_valid:
+            print(f"✅ Suppliers data ({num_suppliers:,} rows) validates against schema")
+        else:
+            print(f"❌ Suppliers validation failed: {error}")
+    except Exception as e:
+        print(f"❌ Suppliers validation error: {e}")
     
     print(f"✅ Sample raw written to {out}. Expand to required volumes per /docs.")
 if __name__ == '__main__':
