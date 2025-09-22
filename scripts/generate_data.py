@@ -377,6 +377,104 @@ def main():
             f.write(f"{sid},{code},{name},{country},{base_lt},{preferred_val}\n")
 
     ######## 5.ORDERS HEADER ########
+    # Generate orders header with daily partitioning and foreign key violations
+    num_orders = apply_scale_to_targets(TARGET_ROWS['orders_header'], args.scale)
+    orders_header_columns = get_column_names(orders_header_schema)
+    
+    # Date range for orders: last 12 months from today
+    end_date = date.today()
+    start_date = end_date - timedelta(days=365)
+    order_dates = generate_date_range(start_date, end_date)
+    
+    # Distribute orders across dates with some variation (weekdays busier)
+    orders_per_date = {}
+    remaining_orders = num_orders
+    for order_date in order_dates:
+        # Weight weekdays (Mon-Fri) higher than weekends
+        if order_date.weekday() < 5:  # Monday = 0, Sunday = 6
+            daily_weight = 1.4
+        else:
+            daily_weight = 0.8
+        
+        # Distribute orders with some randomness
+        base_orders = max(1, int(num_orders / len(order_dates) * daily_weight))
+        variation = int(base_orders * 0.3)  # ±30% variation
+        daily_orders = max(1, base_orders + random.randint(-variation, variation))
+        daily_orders = min(daily_orders, remaining_orders)
+        
+        orders_per_date[order_date] = daily_orders
+        remaining_orders -= daily_orders
+        
+        if remaining_orders <= 0:
+            break
+    
+    # Get valid foreign key ranges for realistic references (99%) and violations (1%)
+    valid_customer_ids = list(range(1, num_customers + 1))
+    valid_store_ids = list(range(1, num_stores + 1))
+    
+    # Payment methods and channels for realistic distribution
+    payment_methods = ['credit_card', 'debit_card', 'paypal', 'cash', 'buy_now_pay_later']
+    payment_weights = [0.45, 0.25, 0.15, 0.10, 0.05]
+    channels = ['web', 'pos']
+    channel_weights = [0.6, 0.4]  # Web orders more common
+    currencies = ['AUD', 'USD', 'EUR']
+    currency_weights = [0.8, 0.15, 0.05]
+    
+    order_id = 1
+    duplicate_order_ids = set()  # Track duplicates for 0.05% anomaly
+    
+    for order_date, daily_orders in orders_per_date.items():
+        if daily_orders == 0:
+            continue
+            
+        # Create partitioned directory structure
+        partition_path = create_partitioned_path(out / 'orders', ['order_dt'], [order_date.isoformat()])
+        ensure_dir(partition_path)
+        orders_header_file = partition_path / 'orders_header.csv'
+        
+        # Generate foreign keys with controlled violations
+        daily_customer_ids = [random.choice(valid_customer_ids) for _ in range(daily_orders)]
+        daily_store_ids = [random.choice(valid_store_ids) for _ in range(daily_orders)]
+        
+        # Inject 1% foreign key violations
+        daily_customer_ids = inject_foreign_key_violations(daily_customer_ids, 0.01)
+        daily_store_ids = inject_foreign_key_violations(daily_store_ids, 0.01)
+        
+        with orders_header_file.open('w', encoding='utf-8') as f:
+            f.write(','.join(orders_header_columns) + '\n')
+            
+            for i in range(daily_orders):
+                # Generate order timestamp with business hours weighting
+                order_ts = generate_business_hours_timestamp(order_date)
+                
+                # 0.05% duplicate order_ids across partitions (anomaly)
+                current_order_id = order_id
+                if random.random() < 0.0005 and duplicate_order_ids:
+                    current_order_id = random.choice(list(duplicate_order_ids))
+                else:
+                    duplicate_order_ids.add(order_id)
+                
+                # Channel selection affects other attributes
+                channel = random.choices(channels, weights=channel_weights)[0]
+                payment_method = random.choices(payment_methods, weights=payment_weights)[0]
+                
+                # Coupon codes: 15% of orders have them
+                coupon_code = ''
+                if random.random() < 0.15:
+                    coupon_code = f"SAVE{random.randint(5, 25)}"
+                
+                # Shipping fee logic: $0 for pickup/pos, $5-25 for delivery
+                if channel == 'pos' or random.random() < 0.3:  # 30% pickup even for web
+                    shipping_fee = Decimal('0.00')
+                else:
+                    shipping_fee = Decimal(f"{random.uniform(4.99, 24.99):.2f}")
+                
+                currency = random.choices(currencies, weights=currency_weights)[0]
+                
+                f.write(f"{current_order_id},{order_ts.isoformat()},{order_date.isoformat()},{daily_customer_ids[i]},{daily_store_ids[i]},{channel},{payment_method},{coupon_code},{shipping_fee},{currency}\n")
+                
+                order_id += 1
+
     ######## 6.ORDERS LINES ########
     ######## 7.EVENTS ########
     ######## 8.SENSORS ########
@@ -430,10 +528,3 @@ def main():
     print(f"✅ Sample raw written to {out}. Expand to required volumes per /docs.")
 if __name__ == '__main__':
     main()
-	
-	
-	
-	
-	
-	
-####feat: Add partitioning utility functions for orders generatio
