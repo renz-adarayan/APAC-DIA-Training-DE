@@ -203,8 +203,8 @@ def main():
         'suppliers': out / 'suppliers.csv',
         'shipments': out / 'shipments.parquet',
         # Future datasets placeholders (uncomment/extend when implemented):
-        # 'orders_header': out / 'orders_header.csv',
-        # 'orders_lines': out / 'orders_lines.csv',
+        'orders_header': out / 'orders_header.csv',
+        'orders_lines': out / 'orders_lines.csv',
         # 'events': out / 'events.csv',
         # 'sensors': out / 'sensors.csv',
         # 'exchange_rates': out / 'exchange_rates.csv',
@@ -476,6 +476,108 @@ def main():
                 order_id += 1
 
     ######## 6.ORDERS LINES ########
+    # Generate orders lines matching header partitioning with 3.5 average lines per order
+    num_lines_target = apply_scale_to_targets(TARGET_ROWS['orders_lines'], args.scale)
+    orders_lines_columns = get_column_names(orders_lines_schema)
+    
+    # Valid product IDs for foreign key references and violations
+    valid_product_ids = list(range(1, num_products + 1))
+    
+    # Track total lines generated
+    total_lines_generated = 0
+    
+    # Lines per order distribution (weighted toward 2-4 lines, but allowing 1-8)
+    lines_per_order_weights = [0.1, 0.25, 0.25, 0.2, 0.1, 0.05, 0.03, 0.02]  # 1-8 lines
+    
+    # Process each partition to generate corresponding lines
+    for order_date, daily_orders in orders_per_date.items():
+        if daily_orders == 0:
+            continue
+            
+        # Use same partition structure as orders header
+        partition_path = create_partitioned_path(out / 'orders', ['order_dt'], [order_date.isoformat()])
+        orders_lines_file = partition_path / 'orders_lines.csv'
+        
+        # Calculate how many lines to generate for this partition
+        # Target ~3.5 lines per order but respect overall target
+        partition_lines_target = min(
+            int(daily_orders * 3.5),
+            num_lines_target - total_lines_generated
+        )
+        
+        if partition_lines_target <= 0:
+            continue
+            
+        with orders_lines_file.open('w', encoding='utf-8') as f:
+            f.write(','.join(orders_lines_columns) + '\n')
+            
+            lines_written = 0
+            current_order_id = ((order_date - start_date).days * max(1, int(num_orders / len(order_dates)))) + 1
+            
+            for order_idx in range(daily_orders):
+                if lines_written >= partition_lines_target:
+                    break
+                    
+                # Determine number of lines for this order
+                num_lines = random.choices(range(1, 9), weights=lines_per_order_weights)[0]
+                
+                # Don't exceed partition target
+                num_lines = min(num_lines, partition_lines_target - lines_written)
+                
+                for line_num in range(1, num_lines + 1):
+                    # Generate product_id with 1% foreign key violations
+                    product_id = random.choice(valid_product_ids)
+                    if random.random() < 0.01:
+                        # Foreign key violation: invalid product_id
+                        product_id = random.randint(max(valid_product_ids) + 1, 999999)
+                    
+                    # Quantity distribution: mostly 1-3, occasionally higher
+                    if random.random() < 0.001:  # 0.1% negative quantity anomaly
+                        qty = -random.randint(1, 3)
+                    else:
+                        qty_weights = [0.5, 0.3, 0.15, 0.03, 0.01, 0.01]  # 1-6 qty
+                        qty = random.choices(range(1, 7), weights=qty_weights)[0]
+                    
+                    # Unit price: base from product price with ±20% variation for promotions
+                    # For simplicity, use category-based pricing similar to products
+                    base_price = random.uniform(5, 500)  # Simplified range
+                    promotion_factor = random.uniform(0.8, 1.2)  # ±20% price variation
+                    
+                    if random.random() < 0.0005:  # 0.05% zero price anomaly (free items)
+                        unit_price = Decimal('0.0000')
+                    else:
+                        unit_price = Decimal(f"{base_price * promotion_factor:.4f}")
+                    
+                    # Line discount: 80% no discount, 20% have discount (0-50%)
+                    if random.random() < 0.8:
+                        line_discount_pct = Decimal('0.0000')
+                    else:
+                        discount = random.uniform(0.05, 0.50)  # 5-50% discount
+                        line_discount_pct = Decimal(f"{discount:.4f}")
+                    
+                    # Tax percentage: 10% for AUD (GST), varying for other currencies
+                    tax_rates = {
+                        'AUD': 0.10,    # GST
+                        'USD': 0.0875,  # Average US sales tax
+                        'EUR': 0.20     # Average EU VAT
+                    }
+                    # For simplicity, assume AUD for most transactions
+                    currency = random.choices(['AUD', 'USD', 'EUR'], weights=[0.8, 0.15, 0.05])[0]
+                    tax_pct = Decimal(f"{tax_rates.get(currency, 0.10):.4f}")
+                    
+                    f.write(f"{current_order_id},{line_num},{product_id},{qty},{unit_price},{line_discount_pct},{tax_pct}\n")
+                    
+                    lines_written += 1
+                    if lines_written >= partition_lines_target:
+                        break
+                
+                current_order_id += 1
+        
+        total_lines_generated += lines_written
+        
+        if total_lines_generated >= num_lines_target:
+            break
+
     ######## 7.EVENTS ########
     ######## 8.SENSORS ########
     ######## 9.EXCHANGE RATES ########
