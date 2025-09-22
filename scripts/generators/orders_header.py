@@ -28,7 +28,7 @@ from utils.constants import (
 
 
 def generate_orders_header_data(schema: pa.Schema, scale: float, output_path: Path, 
-                               num_customers: int, num_stores: int) -> int:
+                               num_customers: int, num_stores: int) -> tuple[int, dict, date, int, list[date]]:
     """Generate orders header data with daily partitioning and write to CSV files.
     
     Args:
@@ -39,7 +39,7 @@ def generate_orders_header_data(schema: pa.Schema, scale: float, output_path: Pa
         num_stores: Number of stores available for foreign key references
         
     Returns:
-        int: Number of orders generated
+        tuple: (orders_count, orders_per_date, start_date, num_orders, order_dates)
     """
     num_orders = apply_scale_to_targets(TARGET_ROWS['orders_header'], scale)
     orders_header_columns = get_column_names(schema)
@@ -152,4 +152,4 @@ def generate_orders_header_data(schema: pa.Schema, scale: float, output_path: Pa
                 order_id += 1
                 total_orders_generated += 1
     
-    return total_orders_generated
+    return total_orders_generated, orders_per_date, start_date, num_orders, order_dates

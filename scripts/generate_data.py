@@ -14,6 +14,7 @@ if str(PROJECT_ROOT) not in sys.path:
 try:
     from schemas import (
         customers_schema, products_schema, stores_schema, suppliers_schema,
+        orders_header_schema, orders_lines_schema,
     )
 except ModuleNotFoundError as e:
     raise ModuleNotFoundError(
@@ -28,6 +29,8 @@ from generators.customers import generate_customers_data
 from generators.products import generate_products_data
 from generators.stores import generate_stores_data
 from generators.suppliers import generate_suppliers_data
+from generators.orders_header import generate_orders_header_data
+from generators.orders_lines import generate_orders_lines_data
 
 
 def parse_args():
@@ -79,6 +82,24 @@ def main():
     print("Generating suppliers data...")
     results['suppliers'] = generate_suppliers_data(suppliers_schema, args.scale, paths['suppliers'])
     
+    print("Generating orders header data...")
+    orders_header_count, orders_per_date, start_date, num_orders, order_dates = generate_orders_header_data(
+        orders_header_schema, args.scale, out, results['customers'], results['stores']
+    )
+    results['orders_header'] = orders_header_count
+    
+    print("Generating orders lines data...")
+    orders_lines_count = generate_orders_lines_data(
+        orders_lines_schema, 
+        args.scale, 
+        out, 
+        orders_per_date, 
+        results['products'], 
+        start_date, 
+        num_orders, 
+        order_dates
+    )
+    results['orders_lines'] = orders_lines_count
 
     print(f"Generated data summary:")
     for dataset, count in results.items():

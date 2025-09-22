@@ -44,6 +44,7 @@ DATASET_REGISTRY = {
     'stores':        {'schema_attr': 'stores_schema',        'module': 'scripts.generators.stores',        'func': 'generate_stores_data',        'ext': 'csv', 'dependencies': [], 'partitioned': False},
     'suppliers':     {'schema_attr': 'suppliers_schema',     'module': 'scripts.generators.suppliers',     'func': 'generate_suppliers_data',     'ext': 'csv', 'dependencies': [], 'partitioned': False},
     'orders_header': {'schema_attr': 'orders_header_schema', 'module': 'scripts.generators.orders_header', 'func': 'generate_orders_header_data', 'ext': 'csv', 'dependencies': ['customers', 'stores'], 'partitioned': True},
+    'orders_lines':  {'schema_attr': 'orders_lines_schema',  'module': 'scripts.generators.orders_lines',  'func': 'generate_orders_lines_data',  'ext': 'csv', 'dependencies': ['products', 'orders_header'], 'partitioned': True},
 }
 
 
@@ -156,7 +157,15 @@ def main():
             row_counts = calculate_row_counts(['customers', 'stores'], args.scale)
             num_customers = generated_counts.get('customers', row_counts.get('customers', 0))
             num_stores = generated_counts.get('stores', row_counts.get('stores', 0))
-            rows = func(schema, args.scale, out_path, num_customers, num_stores)
+            result = func(schema, args.scale, out_path, num_customers, num_stores)
+            # Handle tuple return from orders_header
+            rows = result[0] if isinstance(result, tuple) else result
+        elif ds == 'orders_lines':
+            # Special case: orders_lines requires complex parameters from orders_header generation
+            # This would need orders_per_date, start_date, num_orders, order_dates from orders_header
+            print(f"[warning] {ds} requires complex dependencies from orders_header generation.")
+            print(f"[warning] Use generate_data.py for full integrated generation of orders data.")
+            rows = 0  # Skip for now
         else:
             # Standard generator signature
             rows = func(schema, args.scale, out_path)
