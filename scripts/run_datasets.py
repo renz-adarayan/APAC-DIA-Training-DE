@@ -37,12 +37,13 @@ if str(PROJECT_ROOT) not in sys.path:
 # Import schemas once
 from schemas import schemas as schemas_mod  # type: ignore
 
-# Dataset registry: dataset_name -> { 'schema_attr': str, 'module': str, 'func': str, 'ext': str }
+# Dataset registry: dataset_name -> { 'schema_attr': str, 'module': str, 'func': str, 'ext': str, 'dependencies': list, 'partitioned': bool }
 DATASET_REGISTRY = {
-    'customers':  {'schema_attr': 'customers_schema',  'module': 'scripts.generators.customers',  'func': 'generate_customers_data',  'ext': 'csv'},
-    'products':   {'schema_attr': 'products_schema',   'module': 'scripts.generators.products',   'func': 'generate_products_data',   'ext': 'csv'},
-    'stores':     {'schema_attr': 'stores_schema',     'module': 'scripts.generators.stores',     'func': 'generate_stores_data',     'ext': 'csv'},
-    'suppliers':  {'schema_attr': 'suppliers_schema',  'module': 'scripts.generators.suppliers',  'func': 'generate_suppliers_data',  'ext': 'csv'},
+    'customers':     {'schema_attr': 'customers_schema',     'module': 'scripts.generators.customers',     'func': 'generate_customers_data',     'ext': 'csv', 'dependencies': [], 'partitioned': False},
+    'products':      {'schema_attr': 'products_schema',      'module': 'scripts.generators.products',      'func': 'generate_products_data',      'ext': 'csv', 'dependencies': [], 'partitioned': False},
+    'stores':        {'schema_attr': 'stores_schema',        'module': 'scripts.generators.stores',        'func': 'generate_stores_data',        'ext': 'csv', 'dependencies': [], 'partitioned': False},
+    'suppliers':     {'schema_attr': 'suppliers_schema',     'module': 'scripts.generators.suppliers',     'func': 'generate_suppliers_data',     'ext': 'csv', 'dependencies': [], 'partitioned': False},
+    'orders_header': {'schema_attr': 'orders_header_schema', 'module': 'scripts.generators.orders_header', 'func': 'generate_orders_header_data', 'ext': 'csv', 'dependencies': ['customers', 'stores'], 'partitioned': True},
 }
 
 
@@ -65,7 +66,45 @@ def resolve_generator(dataset: str):
     module = importlib.import_module(info['module'])
     func = getattr(module, info['func'])
     schema = getattr(schemas_mod, info['schema_attr'])
-    return func, schema, info['ext']
+    return func, schema, info
+
+
+def resolve_dependencies(selected_datasets):
+    """Resolve dataset dependencies and return execution order."""
+    resolved = []
+    seen = set()
+    
+    def add_with_deps(dataset):
+        if dataset in seen:
+            return
+        seen.add(dataset)
+        
+        # Add dependencies first
+        deps = DATASET_REGISTRY[dataset]['dependencies']
+        for dep in deps:
+            if dep in DATASET_REGISTRY:
+                add_with_deps(dep)
+        
+        # Add the dataset itself
+        if dataset not in resolved:
+            resolved.append(dataset)
+    
+    for dataset in selected_datasets:
+        add_with_deps(dataset)
+    
+    return resolved
+
+
+def calculate_row_counts(generated_datasets, scale):
+    """Calculate row counts for datasets that have been generated."""
+    from utils.constants import TARGET_ROWS
+    from utils.data_utils import apply_scale_to_targets
+    
+    counts = {}
+    for dataset in generated_datasets:
+        if dataset in TARGET_ROWS:
+            counts[dataset] = apply_scale_to_targets(TARGET_ROWS[dataset], scale)
+    return counts
 
 
 def main():
@@ -75,7 +114,9 @@ def main():
     if args.list:
         print("Available datasets:")
         for name in sorted(DATASET_REGISTRY.keys()):
-            print(f"  - {name}")
+            deps = DATASET_REGISTRY[name]['dependencies']
+            dep_str = f" (requires: {', '.join(deps)})" if deps else ""
+            print(f"  - {name}{dep_str}")
         return
 
     if args.all:
@@ -88,25 +129,47 @@ def main():
             raise SystemExit(f"Unknown dataset(s): {', '.join(unknown)}. Use --list to see options.")
         selected = args.datasets
 
+    # Resolve dependencies and get execution order
+    execution_order = resolve_dependencies(selected)
+    print(f"[info] Execution order: {' -> '.join(execution_order)}")
+
     out_root = pathlib.Path(args.out)
     out_root.mkdir(parents=True, exist_ok=True)
 
     summary = []
-    for ds in selected:
-        func, schema, ext = resolve_generator(ds)
-        out_path = out_root / f"{ds}.{ext}"
-        print(f"[info] Generating {ds} -> {out_path} (scale={args.scale})")
-        rows = func(schema, args.scale, out_path)  # type: ignore[arg-type]
+    generated_counts = {}
+    
+    for ds in execution_order:
+        func, schema, info = resolve_generator(ds)
+        
+        # Handle partitioned vs single file output
+        if info['partitioned']:
+            out_path = out_root  # Base directory for partitioned output
+            print(f"[info] Generating {ds} -> {out_path}/<partitions> (scale={args.scale})")
+        else:
+            out_path = out_root / f"{ds}.{info['ext']}"
+            print(f"[info] Generating {ds} -> {out_path} (scale={args.scale})")
+        
+        # Handle different function signatures
+        if ds == 'orders_header':
+            # Special case: orders_header needs customer and store counts
+            row_counts = calculate_row_counts(['customers', 'stores'], args.scale)
+            num_customers = generated_counts.get('customers', row_counts.get('customers', 0))
+            num_stores = generated_counts.get('stores', row_counts.get('stores', 0))
+            rows = func(schema, args.scale, out_path, num_customers, num_stores)
+        else:
+            # Standard generator signature
+            rows = func(schema, args.scale, out_path)
+        
+        generated_counts[ds] = rows
         summary.append((ds, rows, out_path))
         print(f"[ok] {ds}: {rows} rows")
 
     print("\nSummary:")
     for ds, rows, path in summary:
-        print(f"  {ds:<10} {rows:>8} rows -> {path}")
+        path_str = f"{path}/<partitions>" if DATASET_REGISTRY[ds]['partitioned'] else str(path)
+        print(f"  {ds:<15} {rows:>8} rows -> {path_str}")
 
 
 if __name__ == '__main__':
     main()
-
-
-
