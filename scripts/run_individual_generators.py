@@ -1,21 +1,21 @@
-# Usage: python scripts/run_datasets.py --datasets customers products --scale 0.0005 --out data_raw_individual
+# Usage: python scripts/run_individual_generators.py --datasets customers products --scale 0.0005 --out data_raw_individual
 """Generic runner for individual dataset generators.
 
 Example usages (from project root):
   # List available datasets
-  python scripts/run_datasets.py --list
+  python scripts/run_individual_generators.py --list
 
   # Generate customers only (1% scale)
-  python scripts/run_datasets.py --datasets customers --scale 0.01
+  python scripts/run_individual_generators.py --datasets customers --scale 0.01
 
   # Generate multiple datasets
-  python scripts/run_datasets.py --datasets customers products stores --scale 0.02
+  python scripts/run_individual_generators.py --datasets customers products stores --scale 0.02
 
   # Generate all supported datasets at tiny sample scale
-  python scripts/run_datasets.py --all --scale 0.001
+  python scripts/run_individual_generators.py --all --scale 0.001
 
   # Custom output dir & seed
-  python scripts/run_datasets.py --datasets suppliers --out data_raw --seed 123
+  python scripts/run_individual_generators.py --datasets suppliers --out data_raw --seed 123
 
 Notes:
   * Each generator returns number of rows written.
@@ -163,7 +163,6 @@ def main():
             rows = result[0] if isinstance(result, tuple) else result
         elif ds == 'orders_lines':
             # Special case: orders_lines requires complex parameters from orders_header generation
-            # This would need orders_per_date, start_date, num_orders, order_dates from orders_header
             print(f"[warning] {ds} requires complex dependencies from orders_header generation.")
             print(f"[warning] Use generate_data.py for full integrated generation of orders data.")
             rows = 0  # Skip for now
