@@ -15,7 +15,7 @@ try:
     from schemas import (
         customers_schema, products_schema, stores_schema, suppliers_schema,
         orders_header_schema, orders_lines_schema, events_schema, sensors_schema,
-        exchange_rates_schema,
+        exchange_rates_schema, shipments_schema,
     )
 except ModuleNotFoundError as e:
     raise ModuleNotFoundError(
@@ -35,6 +35,7 @@ from generators.orders_lines import generate_orders_lines_data
 from generators.events import generate_events_data
 from generators.sensors import generate_sensors_data
 from generators.exchange_rates import generate_exchange_rates_data
+from generators.shipments import generate_shipments_data
 
 
 def parse_args():
@@ -69,6 +70,7 @@ def main():
         'suppliers': out / 'suppliers.csv',
         'sensors': out / 'sensors',
         'exchange_rates': out / 'exchange_rates.xlsx',
+        'shipments': out / 'shipments.parquet',
     }
 
     print("Starting data generation...")
@@ -115,6 +117,9 @@ def main():
 
     print("Generating exchange rates data...")
     results['exchange_rates'] = generate_exchange_rates_data(exchange_rates_schema, args.scale, paths['exchange_rates'])
+
+    print("Generating shipments data...")
+    results['shipments'] = generate_shipments_data(shipments_schema, args.scale, paths['shipments'])
 
     print(f"Generated data summary:")
     for dataset, count in results.items():
