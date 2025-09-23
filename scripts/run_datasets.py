@@ -45,6 +45,7 @@ DATASET_REGISTRY = {
     'suppliers':     {'schema_attr': 'suppliers_schema',     'module': 'scripts.generators.suppliers',     'func': 'generate_suppliers_data',     'ext': 'csv', 'dependencies': [], 'partitioned': False},
     'orders_header': {'schema_attr': 'orders_header_schema', 'module': 'scripts.generators.orders_header', 'func': 'generate_orders_header_data', 'ext': 'csv', 'dependencies': ['customers', 'stores'], 'partitioned': True},
     'orders_lines':  {'schema_attr': 'orders_lines_schema',  'module': 'scripts.generators.orders_lines',  'func': 'generate_orders_lines_data',  'ext': 'csv', 'dependencies': ['products', 'orders_header'], 'partitioned': True},
+    'events':        {'schema_attr': 'events_schema',        'module': 'scripts.generators.events',        'func': 'generate_events_data',        'ext': 'jsonl', 'dependencies': ['customers'], 'partitioned': True},
 }
 
 
