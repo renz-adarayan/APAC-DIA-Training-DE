@@ -43,6 +43,7 @@ DATASET_REGISTRY = {
     'products':      {'schema_attr': 'products_schema',      'module': 'scripts.generators.products',      'func': 'generate_products_data',      'ext': 'csv', 'dependencies': [], 'partitioned': False},
     'stores':        {'schema_attr': 'stores_schema',        'module': 'scripts.generators.stores',        'func': 'generate_stores_data',        'ext': 'csv', 'dependencies': [], 'partitioned': False},
     'suppliers':     {'schema_attr': 'suppliers_schema',     'module': 'scripts.generators.suppliers',     'func': 'generate_suppliers_data',     'ext': 'csv', 'dependencies': [], 'partitioned': False},
+    'exchange_rates': {'schema_attr': 'exchange_rates_schema', 'module': 'scripts.generators.exchange_rates', 'func': 'generate_exchange_rates_data', 'ext': 'xlsx', 'dependencies': [], 'partitioned': False},
     'orders_header': {'schema_attr': 'orders_header_schema', 'module': 'scripts.generators.orders_header', 'func': 'generate_orders_header_data', 'ext': 'csv', 'dependencies': ['customers', 'stores'], 'partitioned': True},
     'orders_lines':  {'schema_attr': 'orders_lines_schema',  'module': 'scripts.generators.orders_lines',  'func': 'generate_orders_lines_data',  'ext': 'csv', 'dependencies': ['products', 'orders_header'], 'partitioned': True},
     'events':        {'schema_attr': 'events_schema',        'module': 'scripts.generators.events',        'func': 'generate_events_data',        'ext': 'jsonl', 'dependencies': ['customers'], 'partitioned': True},
