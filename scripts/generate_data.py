@@ -14,7 +14,7 @@ if str(PROJECT_ROOT) not in sys.path:
 try:
     from schemas import (
         customers_schema, products_schema, stores_schema, suppliers_schema,
-        orders_header_schema, orders_lines_schema, events_schema,
+        orders_header_schema, orders_lines_schema, events_schema, sensors_schema,
     )
 except ModuleNotFoundError as e:
     raise ModuleNotFoundError(
@@ -32,6 +32,7 @@ from generators.suppliers import generate_suppliers_data
 from generators.orders_header import generate_orders_header_data
 from generators.orders_lines import generate_orders_lines_data
 from generators.events import generate_events_data
+from generators.sensors import generate_sensors_data
 
 
 def parse_args():
@@ -64,6 +65,7 @@ def main():
         'products': out / 'products.csv',
         'stores': out / 'stores.csv',
         'suppliers': out / 'suppliers.csv',
+        'sensors': out / 'sensors',
     }
 
     print("Starting data generation...")
@@ -104,6 +106,9 @@ def main():
 
     print("Generating events data...")
     results['events'] = generate_events_data(events_schema, args.scale, out)
+
+    print("Generating sensors data...")
+    results['sensors'] = generate_sensors_data(sensors_schema, args.scale, paths['sensors'])
 
     print(f"Generated data summary:")
     for dataset, count in results.items():
