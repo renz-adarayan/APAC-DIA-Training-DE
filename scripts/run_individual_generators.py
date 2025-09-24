@@ -45,6 +45,7 @@ DATASET_REGISTRY = {
     'suppliers':     {'schema_attr': 'suppliers_schema',     'module': 'scripts.generators.suppliers',     'func': 'generate_suppliers_data',     'ext': 'csv', 'dependencies': [], 'partitioned': False},
     'exchange_rates': {'schema_attr': 'exchange_rates_schema', 'module': 'scripts.generators.exchange_rates', 'func': 'generate_exchange_rates_data', 'ext': 'xlsx', 'dependencies': [], 'partitioned': False},
     'shipments':     {'schema_attr': 'shipments_schema',     'module': 'scripts.generators.shipments',     'func': 'generate_shipments_data',     'ext': 'parquet', 'dependencies': [], 'partitioned': False},
+    'returns':       {'schema_attr': 'returns_day1_schema',  'module': 'scripts.generators.returns',       'func': 'generate_returns_data',       'ext': 'delta', 'dependencies': ['orders_header'], 'partitioned': False},
     'orders_header': {'schema_attr': 'orders_header_schema', 'module': 'scripts.generators.orders_header', 'func': 'generate_orders_header_data', 'ext': 'csv', 'dependencies': ['customers', 'stores'], 'partitioned': True},
     'orders_lines':  {'schema_attr': 'orders_lines_schema',  'module': 'scripts.generators.orders_lines',  'func': 'generate_orders_lines_data',  'ext': 'csv', 'dependencies': ['products', 'orders_header'], 'partitioned': True},
     'events':        {'schema_attr': 'events_schema',        'module': 'scripts.generators.events',        'func': 'generate_events_data',        'ext': 'jsonl', 'dependencies': ['customers'], 'partitioned': True},
@@ -169,6 +170,13 @@ def main():
             print(f"[warning] {ds} requires complex dependencies from orders_header generation.")
             print(f"[warning] Use generate_data.py for full integrated generation of orders data.")
             rows = 0  # Skip for now
+        elif ds == 'returns':
+            # Special case: returns needs orders_header count for FK references
+            orders_header_count = generated_counts.get('orders_header', 0)
+            if orders_header_count == 0:
+                row_counts = calculate_row_counts(['orders_header'], args.scale)
+                orders_header_count = row_counts.get('orders_header', 10000)  # Default fallback
+            rows = func(schema, args.scale, out_path, orders_header_count)
         else:
             # Standard generator signature
             rows = func(schema, args.scale, out_path)
