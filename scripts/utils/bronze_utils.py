@@ -1,0 +1,132 @@
+"""Bronze layer utility functions for file processing with manifest tracking."""
+
+import datetime as dt
+import hashlib
+import pathlib
+import pyarrow as pa
+import pyarrow.csv as pacsv
+import pyarrow.dataset as pads
+import pandas as pd
+
+try:
+    from deltalake import write_deltalake
+except Exception as e:
+    write_deltalake = None
+
+
+def calculate_file_hash(file_path):
+    """Calculate SHA-256 hash of file for integrity checking."""
+    hash_sha256 = hashlib.sha256()
+    with open(file_path, "rb") as f:
+        for chunk in iter(lambda: f.read(4096), b""):
+            hash_sha256.update(chunk)
+    return hash_sha256.hexdigest()
+
+
+def write_parquet_partitioned(table, base_path, partitioning=None):
+    """Write table to Parquet format with optional partitioning."""
+    pads.write_dataset(table, base_dir=str(base_path), format='parquet', 
+                       partitioning=partitioning, existing_data_behavior='overwrite_or_ignore')
+
+
+def write_delta(table, base_path, mode='append', partition_by=None, merge_schema=False):
+    """Write table to Delta Lake format."""
+    if write_deltalake is None:
+        raise RuntimeError('deltalake not installed')
+    write_deltalake(str(base_path), data=table, mode=mode, partition_by=partition_by or [])
+
+
+def process_file_with(src_path, table_name, schema, read_func, lake_root, conn, dry_run=False):
+    """Utility function to process file"""
+    if not src_path.exists():
+        print(f"{table_name.title()} file not found: {src_path}")
+        return
+    if not dry_run and already_processed(conn, src_path):
+        print(f"{table_name.title()} file already processed: {src_path}")
+        return
+    
+    print(f"Processing {table_name} file: {src_path}")
+    
+    # Get file metadata
+    file_size_bytes = src_path.stat().st_size
+    
+    if dry_run:
+        print(f"DRY RUN: Would process {src_path} ({file_size_bytes} bytes)")
+        return
+    
+    # Track processing time
+    start_time = dt.datetime.utcnow()
+    reject_count = 0
+    error_message = None
+    status = 'SUCCESS'
+    file_hash = None
+    
+    try:
+        # Calculate file hash for integrity checking
+        print(f"  • Calculating file hash for integrity...")
+        file_hash = calculate_file_hash(src_path)
+        
+        # Use the provided read function to load and validate data
+        tbl = read_func(src_path, schema)
+        
+        print(f"  • Adding audit columns...")
+        now = pa.scalar(dt.datetime.utcnow(), type=pa.timestamp('us'))
+        tbl = tbl.append_column('ingestion_ts', pa.array([now.as_py()]*len(tbl), type=pa.timestamp('us')))
+        
+        print(f"  • Writing to Parquet and Delta formats...")
+        pq_base = lake_root / 'bronze' / 'parquet' / table_name
+        dl_base = lake_root / 'bronze' / 'delta' / table_name
+        write_parquet_partitioned(tbl, pq_base, partitioning=None)
+        write_delta(tbl, dl_base, mode='append')
+        
+        # Calculate processing duration
+        processing_duration_ms = int((dt.datetime.utcnow() - start_time).total_seconds() * 1000)
+        
+        # Mark as successfully processed with enhanced metadata
+        mark_processed(conn, src_path, len(tbl), reject_count, file_hash, status,
+                      error_message, file_size_bytes, processing_duration_ms)
+        
+        print(f"✅ Successfully processed {table_name}: {len(tbl)} rows in {processing_duration_ms}ms")
+        print(f"   File hash: {file_hash[:16]}... | Size: {file_size_bytes} bytes")
+        
+    except Exception as e:
+        # Handle processing failure
+        processing_duration_ms = int((dt.datetime.utcnow() - start_time).total_seconds() * 1000)
+        status = 'FAILED'
+        error_message = str(e)
+        
+        # Mark as failed in manifest with error details
+        mark_processed(conn, src_path, 0, reject_count, file_hash, status,
+                      error_message, file_size_bytes, processing_duration_ms)
+        
+        print(f"❌ Failed to process {table_name} file: {error_message}")
+        raise
+
+
+def already_processed(conn, p): 
+    """Check if file has already been processed."""
+    return conn.execute("SELECT 1 FROM manifest_processed_files WHERE src_path = ?", [str(p)]).fetchone() is not None
+
+
+def mark_processed(conn, src_path, row_count, reject_count=0, file_hash=None, status='SUCCESS', error_message=None, file_size_bytes=None, processing_duration_ms=None):
+    """Mark file as processed with comprehensive metadata in the enhanced manifest table."""
+    conn.execute('''
+        INSERT OR REPLACE INTO manifest_processed_files 
+        (src_path, processed_at, row_count, reject_count, file_hash, status, error_message, file_size_bytes, processing_duration_ms)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', [str(src_path), dt.datetime.utcnow(), row_count, reject_count, file_hash, status, error_message, file_size_bytes, processing_duration_ms])
+
+
+def read_csv_with_schema(file_path, schema):
+    """Read CSV file and validate against schema."""
+    print(f"  • Reading and validating CSV data...")
+    tbl = pacsv.read_csv(file_path, read_options=pacsv.ReadOptions(encoding='utf-8'))
+    return tbl.cast(schema, safe=False)
+
+
+def read_xlsx_with_schema(file_path, schema):
+    """Read XLSX file and validate against schema."""
+    print(f"  • Reading and validating XLSX data...")
+    df = pd.read_excel(file_path, engine='openpyxl')
+    tbl = pa.Table.from_pandas(df)
+    return tbl.cast(schema, safe=False)
