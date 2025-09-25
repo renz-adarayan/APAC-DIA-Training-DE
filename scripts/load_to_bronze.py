@@ -48,7 +48,13 @@ def init_manifest(conn):
         CREATE TABLE IF NOT EXISTS manifest_processed_files (
             src_path TEXT PRIMARY KEY,
             processed_at TIMESTAMP,
-            row_count BIGINT
+            row_count BIGINT,
+            reject_count BIGINT DEFAULT 0,
+            file_hash TEXT,
+            status TEXT DEFAULT 'SUCCESS',
+            error_message TEXT,
+            file_size_bytes BIGINT,
+            processing_duration_ms INTEGER
         )
     ''')
 
