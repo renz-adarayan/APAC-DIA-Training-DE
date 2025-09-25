@@ -3,6 +3,7 @@
 # Usage: python scripts/load_to_bronze.py --raw data_raw --lake lake --manifest duckdb/warehouse.duckdb
 import argparse, pathlib, os, hashlib, json, datetime as dt, sys
 import duckdb
+import pandas as pd
 import pyarrow as pa
 import pyarrow.csv as pacsv
 import pyarrow.dataset as pads
@@ -154,6 +155,78 @@ def load_customers(raw_root, lake_root, conn, dry_run=False):
         print(f"❌ Failed to process customers file: {error_message}")
         raise
 
+def load_exchange_rates(raw_root, lake_root, conn, dry_run=False):
+    """Load exchange rates from XLSX format with enhanced manifest tracking."""
+    src = raw_root / 'exchange_rates.xlsx'
+    if not src.exists():
+        print(f"Exchange rates file not found: {src}")
+        return
+    if not dry_run and already_processed(conn, src):
+        print(f"Exchange rates file already processed: {src}")
+        return
+    
+    print(f"Processing exchange rates file: {src}")
+    
+    # Get file metadata
+    file_size_bytes = src.stat().st_size
+    
+    if dry_run:
+        print(f"DRY RUN: Would process {src} ({file_size_bytes} bytes)")
+        return
+    
+    # Track processing time
+    start_time = dt.datetime.utcnow()
+    reject_count = 0
+    error_message = None
+    status = 'SUCCESS'
+    file_hash = None
+    
+    try:
+        # Calculate file hash for integrity checking
+        print(f"  • Calculating file hash for integrity...")
+        file_hash = calculate_file_hash(src)
+        
+        print(f"  • Reading and validating XLSX data...")
+        # Read XLSX file using pandas with openpyxl engine
+        df = pd.read_excel(src, engine='openpyxl')
+        
+        # Convert to PyArrow table and validate against schema
+        tbl = pa.Table.from_pandas(df)
+        tbl = tbl.cast(exchange_rates_schema, safe=False)
+        
+        print(f"  • Adding audit columns...")
+        now = pa.scalar(dt.datetime.utcnow(), type=pa.timestamp('us'))
+        tbl = tbl.append_column('ingestion_ts', pa.array([now.as_py()]*len(tbl), type=pa.timestamp('us')))
+        
+        print(f"  • Writing to Parquet and Delta formats...")
+        pq_base = lake_root / 'bronze' / 'parquet' / 'exchange_rates'
+        dl_base = lake_root / 'bronze' / 'delta' / 'exchange_rates'
+        write_parquet_partitioned(tbl, pq_base, partitioning=None)
+        write_delta(tbl, dl_base, mode='append')
+        
+        # Calculate processing duration
+        processing_duration_ms = int((dt.datetime.utcnow() - start_time).total_seconds() * 1000)
+        
+        # Mark as successfully processed with enhanced metadata
+        mark_processed(conn, src, len(tbl), reject_count, file_hash, status,
+                      error_message, file_size_bytes, processing_duration_ms)
+        
+        print(f"✅ Successfully processed exchange rates: {len(tbl)} rows in {processing_duration_ms}ms")
+        print(f"   File hash: {file_hash[:16]}... | Size: {file_size_bytes} bytes")
+        
+    except Exception as e:
+        # Handle processing failure
+        processing_duration_ms = int((dt.datetime.utcnow() - start_time).total_seconds() * 1000)
+        status = 'FAILED'
+        error_message = str(e)
+        
+        # Mark as failed in manifest with error details
+        mark_processed(conn, src, 0, reject_count, file_hash, status,
+                      error_message, file_size_bytes, processing_duration_ms)
+        
+        print(f"❌ Failed to process exchange rates file: {error_message}")
+        raise
+
 def main():
     args = parse_args()
     raw_root = pathlib.Path(args.raw)
@@ -173,8 +246,9 @@ def main():
         conn = None
 
     load_customers(raw_root, lake_root, conn, args.dry_run)
+    load_exchange_rates(raw_root, lake_root, conn, args.dry_run)
 
-    print("✅ Bronze load completed for implemented loaders (extend for all tables).")
+    print("✅ Bronze load completed for implemented loaders (customers, exchange_rates).")
 
 if __name__ == '__main__':
     main()
