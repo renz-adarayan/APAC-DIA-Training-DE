@@ -76,7 +76,41 @@ def load_customers(raw_root, lake_root, conn, dry_run=False):
         conn=conn,
         dry_run=dry_run,
     )
+def load_products(raw_root, lake_root, conn, dry_run=False):
+    """Wrapper to load products via shared process utility."""
+    process_file_with(
+        src_path=raw_root / 'products.csv',
+        table_name='products',
+        schema=products_schema,
+        read_func=read_csv_with_schema,
+        lake_root=lake_root,
+        conn=conn,
+        dry_run=dry_run,
+    )
 
+def load_stores(raw_root, lake_root, conn, dry_run=False):
+    """Wrapper to load stores via shared process utility."""
+    process_file_with(
+        src_path=raw_root / 'stores.csv',
+        table_name='stores',
+        schema=stores_schema,
+        read_func=read_csv_with_schema,
+        lake_root=lake_root,
+        conn=conn,
+        dry_run=dry_run,
+    )    
+
+def load_suppliers(raw_root, lake_root, conn, dry_run=False):
+    """Wrapper to load suppliers via shared process utility."""
+    process_file_with(
+        src_path=raw_root / 'suppliers.csv',
+        table_name='suppliers',
+        schema=suppliers_schema,
+        read_func=read_csv_with_schema,
+        lake_root=lake_root,
+        conn=conn,
+        dry_run=dry_run,
+    )    
 
 def load_exchange_rates(raw_root, lake_root, conn, dry_run=False):
     """Wrapper to load exchange rates XLSX via shared process utility."""
@@ -109,6 +143,9 @@ def main():
         conn = None
 
     load_customers(raw_root, lake_root, conn, args.dry_run)
+    load_products(raw_root, lake_root, conn, args.dry_run)
+    load_stores(raw_root, lake_root, conn, args.dry_run)
+    load_suppliers(raw_root, lake_root, conn, args.dry_run)
     load_exchange_rates(raw_root, lake_root, conn, args.dry_run)
 
     print("✅ Bronze load completed for implemented loaders (customers, exchange_rates).")
