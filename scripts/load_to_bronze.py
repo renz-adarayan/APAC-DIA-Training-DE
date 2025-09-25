@@ -87,6 +87,7 @@ def write_delta(table, base_path, mode='append', partition_by=None, merge_schema
     write_deltalake(str(base_path), data=table, mode=mode, partition_by=partition_by or [], overwrite_schema=False, engine='rust', schema_mode='merge' if merge_schema else 'fail')
 
 def load_customers(raw_root, lake_root, conn, dry_run=False):
+    """Load customers data with enhanced manifest tracking."""
     src = raw_root/'customers.csv'
     if not src.exists(): 
         print(f"Customers file not found: {src}")
@@ -97,20 +98,61 @@ def load_customers(raw_root, lake_root, conn, dry_run=False):
     
     print(f"Processing customers file: {src}")
     
+    # Get file metadata
+    file_size_bytes = src.stat().st_size
+    
     if dry_run:
-        print(f"DRY RUN: Would process {src} ({src.stat().st_size} bytes)")
+        print(f"DRY RUN: Would process {src} ({file_size_bytes} bytes)")
         return
     
-    tbl = pacsv.read_csv(src, read_options=pacsv.ReadOptions(encoding='utf-8'))
-    tbl = tbl.cast(customers_schema, safe=False)
-    now = pa.scalar(dt.datetime.utcnow(), type=pa.timestamp('us'))
-    tbl = tbl.append_column('ingestion_ts', pa.array([now.as_py()]*len(tbl), type=pa.timestamp('us')))
-    pq_base = lake_root/'bronze'/'parquet'/'customers'
-    dl_base = lake_root/'bronze'/'delta'/'customers'
-    write_parquet_partitioned(tbl, pq_base, partitioning=None)
-    write_delta(tbl, dl_base, mode='append')
-    mark_processed(conn, src, len(tbl))
-    print(f"Successfully processed customers: {len(tbl)} rows")
+    # Track processing time
+    start_time = dt.datetime.utcnow()
+    reject_count = 0
+    error_message = None
+    status = 'SUCCESS'
+    file_hash = None
+    
+    try:
+        # Calculate file hash for integrity checking
+        print(f"  • Calculating file hash for integrity...")
+        file_hash = calculate_file_hash(src)
+        
+        print(f"  • Reading and validating CSV data...")
+        tbl = pacsv.read_csv(src, read_options=pacsv.ReadOptions(encoding='utf-8'))
+        tbl = tbl.cast(customers_schema, safe=False)
+        
+        print(f"  • Adding audit columns...")
+        now = pa.scalar(dt.datetime.utcnow(), type=pa.timestamp('us'))
+        tbl = tbl.append_column('ingestion_ts', pa.array([now.as_py()]*len(tbl), type=pa.timestamp('us')))
+        
+        print(f"  • Writing to Parquet and Delta formats...")
+        pq_base = lake_root/'bronze'/'parquet'/'customers'
+        dl_base = lake_root/'bronze'/'delta'/'customers'
+        write_parquet_partitioned(tbl, pq_base, partitioning=None)
+        write_delta(tbl, dl_base, mode='append')
+        
+        # Calculate processing duration
+        processing_duration_ms = int((dt.datetime.utcnow() - start_time).total_seconds() * 1000)
+        
+        # Mark as successfully processed with enhanced metadata
+        mark_processed(conn, src, len(tbl), reject_count, file_hash, status,
+                      error_message, file_size_bytes, processing_duration_ms)
+        
+        print(f"✅ Successfully processed customers: {len(tbl)} rows in {processing_duration_ms}ms")
+        print(f"   File hash: {file_hash[:16]}... | Size: {file_size_bytes} bytes")
+        
+    except Exception as e:
+        # Handle processing failure
+        processing_duration_ms = int((dt.datetime.utcnow() - start_time).total_seconds() * 1000)
+        status = 'FAILED'
+        error_message = str(e)
+        
+        # Mark as failed in manifest with error details
+        mark_processed(conn, src, 0, reject_count, file_hash, status,
+                      error_message, file_size_bytes, processing_duration_ms)
+        
+        print(f"❌ Failed to process customers file: {error_message}")
+        raise
 
 def main():
     args = parse_args()
