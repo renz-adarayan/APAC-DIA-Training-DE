@@ -27,7 +27,7 @@ except ModuleNotFoundError as e:
 # Import bronze utility functions 
 try:
     from scripts.utils.bronze_utils import (
-        process_file_with,
+        ingest_file_to_bronze,
         read_csv_with_schema,
         read_xlsx_with_schema,
     )
@@ -35,7 +35,7 @@ except ModuleNotFoundError:
     util_path = pathlib.Path(__file__).resolve().parent / 'utils'
     if str(util_path) not in sys.path:
         sys.path.insert(0, str(util_path))
-    from bronze_utils import process_file_with, read_csv_with_schema, read_xlsx_with_schema  # type: ignore
+    from bronze_utils import ingest_file_to_bronze, read_csv_with_schema, read_xlsx_with_schema  # type: ignore
 
 def parse_args():
     ap = argparse.ArgumentParser()
@@ -67,7 +67,7 @@ def init_manifest(conn):
 
 def load_customers(raw_root, lake_root, conn, dry_run=False):
     """Wrapper to load customers via shared process utility."""
-    process_file_with(
+    ingest_file_to_bronze(
         src_path=raw_root / 'customers.csv',
         table_name='customers',
         schema=customers_schema,
@@ -78,7 +78,7 @@ def load_customers(raw_root, lake_root, conn, dry_run=False):
     )
 def load_products(raw_root, lake_root, conn, dry_run=False):
     """Wrapper to load products via shared process utility."""
-    process_file_with(
+    ingest_file_to_bronze(
         src_path=raw_root / 'products.csv',
         table_name='products',
         schema=products_schema,
@@ -90,7 +90,7 @@ def load_products(raw_root, lake_root, conn, dry_run=False):
 
 def load_stores(raw_root, lake_root, conn, dry_run=False):
     """Wrapper to load stores via shared process utility."""
-    process_file_with(
+    ingest_file_to_bronze(
         src_path=raw_root / 'stores.csv',
         table_name='stores',
         schema=stores_schema,
@@ -102,7 +102,7 @@ def load_stores(raw_root, lake_root, conn, dry_run=False):
 
 def load_suppliers(raw_root, lake_root, conn, dry_run=False):
     """Wrapper to load suppliers via shared process utility."""
-    process_file_with(
+    ingest_file_to_bronze(
         src_path=raw_root / 'suppliers.csv',
         table_name='suppliers',
         schema=suppliers_schema,
@@ -114,7 +114,7 @@ def load_suppliers(raw_root, lake_root, conn, dry_run=False):
 
 def load_exchange_rates(raw_root, lake_root, conn, dry_run=False):
     """Wrapper to load exchange rates XLSX via shared process utility."""
-    process_file_with(
+    ingest_file_to_bronze(
         src_path=raw_root / 'exchange_rates.xlsx',
         table_name='exchange_rates',
         schema=exchange_rates_schema,

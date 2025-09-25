@@ -36,7 +36,7 @@ def write_delta(table, base_path, mode='append', partition_by=None, merge_schema
     write_deltalake(str(base_path), data=table, mode=mode, partition_by=partition_by or [])
 
 
-def process_file_with(src_path, table_name, schema, read_func, lake_root, conn, dry_run=False):
+def ingest_file_to_bronze(src_path, table_name, schema, read_func, lake_root, conn, dry_run=False):
     """Utility function to process file"""
     if not src_path.exists():
         print(f"{table_name.title()} file not found: {src_path}")
