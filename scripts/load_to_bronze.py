@@ -84,7 +84,7 @@ def write_parquet_partitioned(table, base_path, partitioning=None):
 def write_delta(table, base_path, mode='append', partition_by=None, merge_schema=False):
     if write_deltalake is None:
         raise RuntimeError('deltalake not installed')
-    write_deltalake(str(base_path), data=table, mode=mode, partition_by=partition_by or [], overwrite_schema=False, engine='rust', schema_mode='merge' if merge_schema else 'fail')
+    write_deltalake(str(base_path), data=table, mode=mode, partition_by=partition_by or [])
 
 def load_customers(raw_root, lake_root, conn, dry_run=False):
     """Load customers data with enhanced manifest tracking."""
