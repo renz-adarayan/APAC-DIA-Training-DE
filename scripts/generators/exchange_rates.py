@@ -11,7 +11,7 @@ from openpyxl.utils import get_column_letter
 
 from utils.data_utils import apply_scale_to_targets, generate_date_range
 from utils.schema_utils import get_column_names
-from utils.constants import TARGET_ROWS
+from utils.constants import TARGET_ROWS, DATA_END_DATE
 
 
 def generate_exchange_rates_data(schema: pa.Schema, scale: float, output_path: Path) -> int:
@@ -41,9 +41,16 @@ def generate_exchange_rates_data(schema: pa.Schema, scale: float, output_path: P
         'SGD': 0.8700,  # Singapore Dollar
     }
     
-    # Start date (3+ years ago to present)
-    start_date = date.today() - timedelta(days=num_days - 1)
-    dates = generate_date_range(start_date, date.today())
+    # Start date (3+ years ago) but cap end at 2024-12-31 to avoid 2025 spillover
+    capped_end = DATA_END_DATE
+    # If today is after capped_end, use capped_end; else use today (still <= capped_end)
+    effective_end = min(date.today(), capped_end)
+    start_date = effective_end - timedelta(days=num_days - 1)
+    # Do not go earlier than 2022-01-01 just to keep dataset reasonable (optional clamp)
+    earliest_allowed = date(2022, 1, 1)
+    if start_date < earliest_allowed:
+        start_date = earliest_allowed
+    dates = generate_date_range(start_date, effective_end)
     
     # Track last weekday rates for weekend handling
     last_weekday_rates: Dict[str, Decimal] = {}

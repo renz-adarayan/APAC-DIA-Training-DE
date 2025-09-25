@@ -8,7 +8,7 @@ import pyarrow as pa
 
 from utils.data_utils import apply_scale_to_targets, create_partitioned_path, ensure_dir
 from utils.schema_utils import get_column_names
-from utils.constants import TARGET_ROWS
+from utils.constants import TARGET_ROWS, DATA_END_DATE
 
 
 def generate_sensors_data(schema: pa.Schema, scale: float, output_path: Path) -> int:
@@ -33,7 +33,7 @@ def generate_sensors_data(schema: pa.Schema, scale: float, output_path: Path) ->
     
     # Date range for 2024 (full year)
     start_date = date(2024, 1, 1)
-    end_date = date(2024, 12, 31)
+    end_date = DATA_END_DATE
     
     total_records_written = 0
     

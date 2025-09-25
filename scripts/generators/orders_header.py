@@ -17,13 +17,14 @@ from utils.data_utils import (
 )
 from utils.schema_utils import get_column_names
 from utils.constants import (
-    TARGET_ROWS, 
-    CHANNELS, 
+    TARGET_ROWS,
+    CHANNELS,
     CHANNEL_WEIGHTS,
-    PAYMENT_METHODS, 
+    PAYMENT_METHODS,
     PAYMENT_WEIGHTS,
-    CURRENCIES, 
-    CURRENCY_WEIGHTS
+    CURRENCIES,
+    CURRENCY_WEIGHTS,
+    DATA_END_DATE
 )
 
 
@@ -44,9 +45,10 @@ def generate_orders_header_data(schema: pa.Schema, scale: float, output_path: Pa
     num_orders = apply_scale_to_targets(TARGET_ROWS['orders_header'], scale)
     orders_header_columns = get_column_names(schema)
     
-    # Date range for orders: last 12 months from today
-    end_date = date.today()
-    start_date = end_date - timedelta(days=365)
+    # Date range for orders: fixed to 2024 to avoid generating 2025 data
+    end_date = DATA_END_DATE
+    # Keep ~12 months window within 2024; start at Jan 1 2024
+    start_date = date(2024, 1, 1)
     order_dates = generate_date_range(start_date, end_date)
     
     # Distribute orders across dates with some variation (weekdays busier)

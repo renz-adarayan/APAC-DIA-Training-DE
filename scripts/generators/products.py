@@ -8,7 +8,7 @@ import pyarrow as pa
 
 from utils.data_utils import apply_scale_to_targets
 from utils.schema_utils import get_column_names
-from utils.constants import TARGET_ROWS, CATEGORY_HIERARCHY, BASE_PRICE_RANGES
+from utils.constants import TARGET_ROWS, CATEGORY_HIERARCHY, BASE_PRICE_RANGES, DATA_END_DATE
 
 
 def generate_products_data(schema: pa.Schema, scale: float, output_path: Path) -> int:
@@ -42,7 +42,9 @@ def generate_products_data(schema: pa.Schema, scale: float, output_path: Path) -
             cat = random.choice(categories)
             subcat = random.choice(CATEGORY_HIERARCHY[cat])
             name = f"{cat} {subcat} Item {pid}"
-            introduced = date.today() - timedelta(days=random.randint(0, 365 * 5))
+            # Cap introduced date so it does not exceed 2024-12-31
+            cap_today = DATA_END_DATE
+            introduced = cap_today - timedelta(days=random.randint(0, 365 * 5))
             
             # 10% discontinued products
             is_disc = random.random() < 0.10
@@ -53,8 +55,8 @@ def generate_products_data(schema: pa.Schema, scale: float, output_path: Path) -
                 else:
                     discontinued_dt = introduced + timedelta(days=random.randint(30, 365*2))
                     # Guard future date overshoot
-                    if discontinued_dt > date.today():
-                        discontinued_dt = date.today() - timedelta(days=random.randint(0,30))
+                    if discontinued_dt > cap_today:
+                        discontinued_dt = cap_today - timedelta(days=random.randint(0,30))
                     discontinued_dt_str = discontinued_dt.isoformat()
             else:
                 discontinued_dt_str = ''

@@ -7,7 +7,7 @@ from faker import Faker
 import pyarrow as pa
 
 from utils.data_utils import apply_scale_to_targets, ensure_dir, generate_date_range
-from utils.constants import TARGET_ROWS, EVENT_TYPES, EVENT_WEIGHTS
+from utils.constants import TARGET_ROWS, EVENT_TYPES, EVENT_WEIGHTS, DATA_END_DATE
 
 
 def generate_events_data(schema: pa.Schema, scale: float, output_path: Path) -> int:
@@ -24,8 +24,8 @@ def generate_events_data(schema: pa.Schema, scale: float, output_path: Path) -> 
     fake = Faker('en_AU')
     num_events = apply_scale_to_targets(TARGET_ROWS['events'], scale)
     
-    # Date range for events: last 90 days from today
-    events_end_date = date.today()
+    # Use centralized DATA_END_DATE constant
+    events_end_date = DATA_END_DATE
     events_start_date = events_end_date - timedelta(days=90)
     events_date_range = generate_date_range(events_start_date, events_end_date)
     

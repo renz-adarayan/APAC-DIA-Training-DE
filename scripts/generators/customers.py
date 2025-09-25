@@ -10,7 +10,7 @@ import pyarrow as pa
 
 from utils.data_utils import apply_scale_to_targets
 from utils.schema_utils import get_column_names
-from utils.constants import TARGET_ROWS
+from utils.constants import TARGET_ROWS, DATA_END_DATE
 
 
 def generate_customers_data(schema: pa.Schema, scale: float, output_path: Path) -> int:
@@ -57,9 +57,11 @@ def generate_customers_data(schema: pa.Schema, scale: float, output_path: Path) 
             # Realistic birth date (1955-2007 per assumptions for 18-70 year olds)
             birth: date = date(1955, 1, 1) + timedelta(days=random.randint(0, 18993))  # 1955-2007
             
-            # Join timestamp (2024 focus with some variety)
-            join_ts: datetime = datetime(2024, 1, 1) + timedelta(
-                days=random.randint(0, 400), 
+            # Join timestamp capped to DATA_END_DATE (central constant)
+            year_start = datetime(DATA_END_DATE.year, 1, 1)
+            max_offset_days = (datetime(DATA_END_DATE.year, 12, 31) - year_start).days
+            join_ts: datetime = year_start + timedelta(
+                days=random.randint(0, max_offset_days),
                 seconds=random.randint(0, 86399)
             )
             
