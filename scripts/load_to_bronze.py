@@ -58,8 +58,16 @@ def init_manifest(conn):
         )
     ''')
 
-def already_processed(conn, p): return conn.execute("SELECT 1 FROM manifest_processed_files WHERE src_path = ?", [str(p)]).fetchone() is not None
-def mark_processed(conn, p, n): conn.execute("INSERT OR REPLACE INTO manifest_processed_files VALUES (?, ?, ?)", [str(p), dt.datetime.utcnow(), n])
+def already_processed(conn, p): 
+    return conn.execute("SELECT 1 FROM manifest_processed_files WHERE src_path = ?", [str(p)]).fetchone() is not None
+
+def mark_processed(conn, src_path, row_count, reject_count=0, file_hash=None, status='SUCCESS', error_message=None, file_size_bytes=None, processing_duration_ms=None):
+    """Mark file as processed with comprehensive metadata in the enhanced manifest table."""
+    conn.execute('''
+        INSERT OR REPLACE INTO manifest_processed_files 
+        (src_path, processed_at, row_count, reject_count, file_hash, status, error_message, file_size_bytes, processing_duration_ms)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', [str(src_path), dt.datetime.utcnow(), row_count, reject_count, file_hash, status, error_message, file_size_bytes, processing_duration_ms])
 
 def calculate_file_hash(file_path):
     """Calculate SHA-256 hash of file for integrity checking."""
