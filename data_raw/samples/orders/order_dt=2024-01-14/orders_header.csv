@@ -1,0 +1,2 @@
+order_id,order_ts,order_dt_local,customer_id,store_id,channel,payment_method,coupon_code,shipping_fee,currency
+14,2024-01-14T08:49:17.368203,2024-01-14,344209,906341,web,buy_now_pay_later,,7.30,EUR
