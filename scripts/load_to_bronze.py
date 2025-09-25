@@ -35,6 +35,7 @@ def parse_args():
     ap.add_argument('--raw', type=str, default='data_raw')
     ap.add_argument('--lake', type=str, default='lake')
     ap.add_argument('--manifest', type=str, default='duckdb/warehouse.duckdb')
+    ap.add_argument('--dry-run', action='store_true')
     return ap.parse_args()
 
 def ensure_dirs(lake_root):
@@ -62,10 +63,21 @@ def write_delta(table, base_path, mode='append', partition_by=None, merge_schema
         raise RuntimeError('deltalake not installed')
     write_deltalake(str(base_path), table=table, mode=mode, partition_by=partition_by or [], overwrite_schema=False, engine='rust', schema_mode='merge' if merge_schema else 'fail')
 
-def load_customers(raw_root, lake_root, conn):
+def load_customers(raw_root, lake_root, conn, dry_run=False):
     src = raw_root/'customers.csv'
-    if not src.exists(): return
-    if already_processed(conn, src): return
+    if not src.exists(): 
+        print(f"Customers file not found: {src}")
+        return
+    if not dry_run and already_processed(conn, src): 
+        print(f"Customers file already processed: {src}")
+        return
+    
+    print(f"Processing customers file: {src}")
+    
+    if dry_run:
+        print(f"DRY RUN: Would process {src} ({src.stat().st_size} bytes)")
+        return
+    
     tbl = pacsv.read_csv(src, read_options=pacsv.ReadOptions(encoding='utf-8'))
     tbl = tbl.cast(customers_schema, safe=False)
     now = pa.scalar(dt.datetime.utcnow(), type=pa.timestamp('us'))
@@ -75,18 +87,27 @@ def load_customers(raw_root, lake_root, conn):
     write_parquet_partitioned(tbl, pq_base, partitioning=None)
     write_delta(tbl, dl_base, mode='append')
     mark_processed(conn, src, len(tbl))
+    print(f"Successfully processed customers: {len(tbl)} rows")
 
 def main():
     args = parse_args()
     raw_root = pathlib.Path(args.raw)
     lake_root = pathlib.Path(args.lake)
+    
+    if args.dry_run:
+        print("=== DRY RUN MODE - No data will be written ===")
+    
     ensure_dirs(lake_root)
     pathlib.Path(args.manifest).parent.mkdir(parents=True, exist_ok=True)
-    conn = duckdb.connect(args.manifest)
-    conn.execute("INSTALL delta; LOAD delta;")
-    init_manifest(conn)
+    
+    if not args.dry_run:
+        conn = duckdb.connect(args.manifest)
+        conn.execute("INSTALL delta; LOAD delta;")
+        init_manifest(conn)
+    else:
+        conn = None
 
-    load_customers(raw_root, lake_root, conn)
+    load_customers(raw_root, lake_root, conn, args.dry_run)
 
     print("✅ Bronze load completed for implemented loaders (extend for all tables).")
 
