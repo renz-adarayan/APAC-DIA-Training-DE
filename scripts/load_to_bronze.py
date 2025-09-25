@@ -1,13 +1,29 @@
 # Ingest raw files into Bronze (Parquet + Delta), with schema validation, partitioning,
 # rejects, and manifest tracking in DuckDB.
 # Usage: python scripts/load_to_bronze.py --raw data_raw --lake lake --manifest duckdb/warehouse.duckdb
-import argparse, pathlib, os, hashlib, json, datetime as dt
+import argparse, pathlib, os, hashlib, json, datetime as dt, sys
 import duckdb
 import pyarrow as pa
 import pyarrow.csv as pacsv
 import pyarrow.dataset as pads
 import pyarrow.parquet as pq
-from schemas.schemas import customers_schema
+
+# Package import bootstrap
+PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+try:
+    from schemas import (
+        customers_schema, products_schema, stores_schema, suppliers_schema,
+        orders_header_schema, orders_lines_schema, events_schema, sensors_schema,
+        exchange_rates_schema, shipments_schema, returns_day1_schema,
+    )
+except ModuleNotFoundError as e:
+    raise ModuleNotFoundError(
+        "Failed to import 'schemas'. Confirm that 'schemas/__init__.py' exists and that you are running the script from the project root. "
+        f"sys.path (first 5 entries): {sys.path[:5]} | Project root: {PROJECT_ROOT}"
+    ) from e
 
 try:
     from deltalake import write_deltalake
