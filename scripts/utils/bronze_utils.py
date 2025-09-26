@@ -202,3 +202,21 @@ def read_parquet_with_schema(file_path, schema):
     
     # Cast to target schema for validation
     return tbl.cast(schema, safe=False)
+
+
+def read_delta_with_schema(file_path, schema):
+    """Read Delta table and validate against schema."""
+    print(f"Reading and validating Delta table data...")
+    try:
+        from deltalake import DeltaTable
+    except ImportError:
+        raise ImportError("deltalake package required for Delta table reading")
+    
+    # Read Delta table using deltalake
+    dt = DeltaTable(str(file_path))
+    tbl = dt.to_pyarrow_table()
+    
+    print(f"Loaded {len(tbl)} records from Delta table")
+    
+    # Cast to target schema for validation
+    return tbl.cast(schema, safe=False)

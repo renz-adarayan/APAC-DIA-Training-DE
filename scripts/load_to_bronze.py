@@ -31,13 +31,14 @@ try:
         read_csv_with_schema,
         read_xlsx_with_schema,
         read_jsonl_with_schema,
-        read_parquet_with_schema
+        read_parquet_with_schema,
+        read_delta_with_schema,
     )
 except ModuleNotFoundError:
     util_path = pathlib.Path(__file__).resolve().parent / 'utils'
     if str(util_path) not in sys.path:
         sys.path.insert(0, str(util_path))
-    from bronze_utils import ingest_file_to_bronze, read_csv_with_schema, read_xlsx_with_schema, read_jsonl_with_schema, read_parquet_with_schema
+    from bronze_utils import ingest_file_to_bronze, read_csv_with_schema, read_xlsx_with_schema, read_jsonl_with_schema, read_parquet_with_schema, read_delta_with_schema
 
 def parse_args():
     ap = argparse.ArgumentParser()
@@ -217,6 +218,17 @@ def load_shipments(raw_root, lake_root, conn, dry_run=False):
         dry_run=dry_run,
     )
 
+def load_returns(raw_root, lake_root, conn, dry_run=False):
+    """Wrapper to load returns Delta table via shared process utility."""
+    ingest_file_to_bronze(
+        src_path=raw_root / 'returns_delta',
+        table_name='returns',
+        schema=returns_day1_schema,
+        read_func=read_delta_with_schema,
+        lake_root=lake_root,
+        conn=conn,
+        dry_run=dry_run,
+    )
 
 def main():
     args = parse_args()
@@ -243,6 +255,7 @@ def main():
     load_exchange_rates(raw_root, lake_root, conn, args.dry_run)
     load_events(raw_root, lake_root, conn, args.dry_run)
     load_shipments(raw_root, lake_root, conn, args.dry_run)
+    load_returns(raw_root, lake_root, conn, args.dry_run)
 
     print("✅ Bronze load completed for all implemented loaders (CSV, XLSX, JSONL, Parquet, Delta).")
 
