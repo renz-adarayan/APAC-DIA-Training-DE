@@ -30,12 +30,13 @@ try:
         ingest_file_to_bronze,
         read_csv_with_schema,
         read_xlsx_with_schema,
+        read_jsonl_with_schema
     )
 except ModuleNotFoundError:
     util_path = pathlib.Path(__file__).resolve().parent / 'utils'
     if str(util_path) not in sys.path:
         sys.path.insert(0, str(util_path))
-    from bronze_utils import ingest_file_to_bronze, read_csv_with_schema, read_xlsx_with_schema  # type: ignore
+    from bronze_utils import ingest_file_to_bronze, read_csv_with_schema, read_xlsx_with_schema, read_jsonl_with_schema
 
 def parse_args():
     ap = argparse.ArgumentParser()
@@ -124,6 +125,86 @@ def load_exchange_rates(raw_root, lake_root, conn, dry_run=False):
         dry_run=dry_run,
     )
 
+def load_events(raw_root, lake_root, conn, dry_run=False):
+    """Wrapper to load events JSONL via shared process utility with incremental partition processing."""
+    events_base = raw_root / 'events'
+    
+    if not events_base.is_dir():
+        print(f"Events directory not found: {events_base}")
+        return
+    
+    # Find all partitions (event_dt=YYYY-MM-DD directories)
+    partitions = [p for p in events_base.iterdir() 
+                  if p.is_dir() and p.name.startswith('event_dt=')]
+    
+    if not partitions:
+        print(f"No event partitions found in: {events_base}")
+        # Fallback: check for JSONL files directly in events directory
+        jsonl_files = list(events_base.glob('*.jsonl'))
+        if jsonl_files:
+            print(f"Found {len(jsonl_files)} JSONL file(s) in root events directory")
+            # Process the first JSONL file found
+            ingest_file_to_bronze(
+                src_path=jsonl_files[0],
+                table_name='events',
+                schema=events_schema,
+                read_func=read_jsonl_with_schema,
+                lake_root=lake_root,
+                conn=conn,
+                dry_run=dry_run,
+            )
+        return
+    
+    # Sort partitions by date (newest first for incremental processing)
+    partitions.sort(key=lambda x: x.name, reverse=True)
+    
+    print(f"Found {len(partitions)} event partitions, processing newest unprocessed first...")
+    
+    # Process the latest unprocessed partition
+    for partition_dir in partitions:
+        print(f"Checking partition: {partition_dir.name}")
+        
+        # Find JSONL files in this partition
+        jsonl_files = list(partition_dir.glob('*.jsonl'))
+        
+        if not jsonl_files:
+            print(f"  No JSONL files found in partition {partition_dir.name}")
+            continue
+        
+        print(f"  Found {len(jsonl_files)} JSONL file(s) in partition {partition_dir.name}")
+        
+        # Process the first unprocessed JSONL file in this partition
+        for jsonl_file in jsonl_files:
+            # Check if this file has already been processed (for incremental loading)
+            if not dry_run and conn:
+                from scripts.utils.bronze_utils import already_processed
+                if already_processed(conn, jsonl_file):
+                    print(f"  JSONL file already processed: {jsonl_file.name}")
+                    continue
+            
+            # Process this partition's JSONL file
+            print(f"  Processing JSONL file: {jsonl_file.name}")
+            ingest_file_to_bronze(
+                src_path=jsonl_file,
+                table_name='events',
+                schema=events_schema,
+                read_func=read_jsonl_with_schema,
+                lake_root=lake_root,
+                conn=conn,
+                dry_run=dry_run,
+            )
+            
+            # For incremental processing, stop after processing one file
+            # This prevents loading all 2M events at once and enables batched processing
+            print(f"  Completed processing partition: {partition_dir.name}")
+            return
+        
+        # If we reach here, all files in this partition were already processed
+        print(f"  All files in partition {partition_dir.name} already processed")
+    
+    print("All event partitions have been processed or no unprocessed partitions found")
+
+
 def main():
     args = parse_args()
     raw_root = pathlib.Path(args.raw)
@@ -147,8 +228,9 @@ def main():
     load_stores(raw_root, lake_root, conn, args.dry_run)
     load_suppliers(raw_root, lake_root, conn, args.dry_run)
     load_exchange_rates(raw_root, lake_root, conn, args.dry_run)
+    load_events(raw_root, lake_root, conn, args.dry_run)
 
-    print("✅ Bronze load completed for implemented loaders (customers, exchange_rates).")
+    print("✅ Bronze load completed for all implemented loaders (CSV, XLSX, JSONL, Parquet, Delta).")
 
 if __name__ == '__main__':
     main()

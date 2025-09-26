@@ -130,3 +130,61 @@ def read_xlsx_with_schema(file_path, schema):
     df = pd.read_excel(file_path, engine='openpyxl')
     tbl = pa.Table.from_pandas(df)
     return tbl.cast(schema, safe=False)
+
+
+def read_jsonl_with_schema(file_path, schema):
+    """Read JSONL file and validate against schema."""
+    print(f"Reading and validating JSONL data...")
+    import json
+    
+    # Check if schema expects raw JSON string or parsed fields
+    schema_field_names = [field.name for field in schema]
+    
+    if 'json' in schema_field_names and len(schema_field_names) == 1:
+        # Schema expects raw JSON as string - store entire JSON line as string
+        records = []
+        with open(file_path, 'r', encoding='utf-8') as f:
+            for line_num, line in enumerate(f, 1):
+                line = line.strip()
+                if line:  # Skip empty lines
+                    try:
+                        # Validate it's valid JSON but store as string
+                        json.loads(line)  # Validate JSON syntax
+                        records.append({"json": line})  # Store raw JSON string
+                    except json.JSONDecodeError as e:
+                        print(f"    Warning: Invalid JSON on line {line_num}: {e}")
+                        continue
+        
+        print(f"Loaded {len(records)} records from JSONL (stored as raw JSON strings)")
+        
+        # Convert to PyArrow table
+        if records:
+            tbl = pa.Table.from_pylist(records)
+            return tbl.cast(schema, safe=False)
+        else:
+            # Return empty table with correct schema if no valid records
+            return pa.table([], schema=schema)
+    
+    else:
+        # Schema expects parsed fields - parse JSON into individual fields
+        records = []
+        with open(file_path, 'r', encoding='utf-8') as f:
+            for line_num, line in enumerate(f, 1):
+                line = line.strip()
+                if line:  # Skip empty lines
+                    try:
+                        record = json.loads(line)
+                        records.append(record)
+                    except json.JSONDecodeError as e:
+                        print(f"    Warning: Invalid JSON on line {line_num}: {e}")
+                        continue
+        
+        print(f"Loaded {len(records)} records from JSONL (parsed as structured data)")
+        
+        # Convert to PyArrow table
+        if records:
+            tbl = pa.Table.from_pylist(records)
+            return tbl.cast(schema, safe=False)
+        else:
+            # Return empty table with correct schema if no valid records
+            return pa.table([], schema=schema)
