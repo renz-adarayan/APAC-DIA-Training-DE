@@ -230,6 +230,91 @@ def load_returns(raw_root, lake_root, conn, dry_run=False):
         dry_run=dry_run,
     )
 
+def load_sensors(raw_root, lake_root, conn, dry_run=False):
+    """Wrapper to load sensors CSV files with incremental partition processing."""
+    sensors_base = raw_root / 'sensors'
+    
+    if not sensors_base.is_dir():
+        print(f"Sensors directory not found: {sensors_base}")
+        return
+    
+    # Find all store_id partitions
+    store_partitions = [p for p in sensors_base.iterdir() 
+                       if p.is_dir() and p.name.startswith('store_id=')]
+    
+    if not store_partitions:
+        print(f"No sensor store partitions found in: {sensors_base}")
+        return
+    
+    # Sort store partitions by store_id (process numerically)
+    store_partitions.sort(key=lambda x: int(x.name.split('=')[1]))
+    
+    print(f"Found {len(store_partitions)} sensor store partitions...")
+    
+    # Process each store's sensor data
+    for store_partition in store_partitions:
+        print(f"Checking store partition: {store_partition.name}")
+        
+        # Find all month partitions within this store
+        month_partitions = [p for p in store_partition.iterdir() 
+                           if p.is_dir() and p.name.startswith('month=')]
+        
+        if not month_partitions:
+            print(f"  No month partitions found in store {store_partition.name}")
+            continue
+        
+        # Sort month partitions by date (newest first for incremental processing)
+        month_partitions.sort(key=lambda x: x.name.split('=')[1], reverse=True)
+        
+        print(f"  Found {len(month_partitions)} month partitions in {store_partition.name}")
+        
+        # Process the latest unprocessed month partition
+        for month_partition in month_partitions:
+            print(f"  Checking month partition: {month_partition.name}")
+            
+            # Find CSV files in this month partition
+            csv_files = list(month_partition.glob('*.csv'))
+            
+            if not csv_files:
+                print(f"    No CSV files found in partition {month_partition.name}")
+                continue
+            
+            print(f"    Found {len(csv_files)} CSV file(s) in partition {month_partition.name}")
+            
+            # Process each CSV file in this partition
+            for csv_file in csv_files:
+                # Check if this file has already been processed (for incremental loading)
+                if not dry_run and conn:
+                    from scripts.utils.bronze_utils import already_processed
+                    if already_processed(conn, csv_file):
+                        print(f"    CSV file already processed: {csv_file.name}")
+                        continue
+                
+                # Process this month's CSV file
+                print(f"    Processing CSV file: {csv_file.name}")
+                ingest_file_to_bronze(
+                    src_path=csv_file,
+                    table_name='sensors',
+                    schema=sensors_schema,
+                    read_func=read_csv_with_schema,
+                    lake_root=lake_root,
+                    conn=conn,
+                    dry_run=dry_run,
+                )
+                
+                # For incremental processing, stop after processing one file per run
+                # This prevents loading all 5-10M sensor records at once
+                print(f"    Completed processing partition: {store_partition.name}/{month_partition.name}")
+                return
+            
+            # If we reach here, all files in this month partition were already processed
+            print(f"    All files in partition {month_partition.name} already processed")
+        
+        # If we reach here, all months in this store partition were already processed
+        print(f"  All month partitions in {store_partition.name} already processed")
+    
+    print("All sensor partitions have been processed or no unprocessed partitions found")
+
 def main():
     args = parse_args()
     raw_root = pathlib.Path(args.raw)
@@ -254,10 +339,11 @@ def main():
     load_suppliers(raw_root, lake_root, conn, args.dry_run)
     load_exchange_rates(raw_root, lake_root, conn, args.dry_run)
     load_events(raw_root, lake_root, conn, args.dry_run)
+    load_sensors(raw_root, lake_root, conn, args.dry_run)
     load_shipments(raw_root, lake_root, conn, args.dry_run)
     load_returns(raw_root, lake_root, conn, args.dry_run)
 
-    print("✅ Bronze load completed for all implemented loaders (CSV, XLSX, JSONL, Parquet, Delta).")
+    print("✅ Bronze load completed for all implemented loaders (CSV, XLSX, JSONL, Parquet, Delta, Sensors).")
 
 if __name__ == '__main__':
     main()
