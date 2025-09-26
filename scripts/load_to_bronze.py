@@ -315,6 +315,126 @@ def load_sensors(raw_root, lake_root, conn, dry_run=False):
     
     print("All sensor partitions have been processed or no unprocessed partitions found")
 
+def load_orders_header(raw_root, lake_root, conn, dry_run=False):
+    """Wrapper to load orders header CSV files with incremental partition processing."""
+    orders_base = raw_root / 'orders'
+    
+    if not orders_base.is_dir():
+        print(f"Orders directory not found: {orders_base}")
+        return
+    
+    # Find all order_dt partitions
+    partitions = [p for p in orders_base.iterdir() 
+                  if p.is_dir() and p.name.startswith('order_dt=')]
+    
+    if not partitions:
+        print(f"No order date partitions found in: {orders_base}")
+        return
+    
+    # Sort partitions by date (newest first for incremental processing)
+    partitions.sort(key=lambda x: x.name.split('=')[1], reverse=True)
+    
+    print(f"Found {len(partitions)} order date partitions, processing newest unprocessed first...")
+    
+    # Process the latest unprocessed partition
+    for partition_dir in partitions:
+        print(f"Checking partition: {partition_dir.name}")
+        
+        # Look for orders_header.csv file in this partition
+        header_file = partition_dir / 'orders_header.csv'
+        
+        if not header_file.exists():
+            print(f"  No orders_header.csv found in partition {partition_dir.name}")
+            continue
+        
+        print(f"  Found orders_header.csv in partition {partition_dir.name}")
+        
+        # Check if this file has already been processed (for incremental loading)
+        if not dry_run and conn:
+            from scripts.utils.bronze_utils import already_processed
+            if already_processed(conn, header_file):
+                print(f"Orders header file already processed: {header_file.name}")
+                continue
+        
+        # Process this partition's orders header file
+        print(f"  Processing orders header file: {header_file.name}")
+        ingest_file_to_bronze(
+            src_path=header_file,
+            table_name='orders_header',
+            schema=orders_header_schema,
+            read_func=read_csv_with_schema,
+            lake_root=lake_root,
+            conn=conn,
+            dry_run=dry_run,
+        )
+        
+        # For incremental processing, stop after processing one file per run
+        # This prevents loading all 1M+ orders at once and enables batched processing
+        print(f"Completed processing partition: {partition_dir.name}")
+        return
+    
+    print("All order header partitions have been processed or no unprocessed partitions found")
+
+def load_orders_lines(raw_root, lake_root, conn, dry_run=False):
+    """Wrapper to load orders lines CSV files with incremental partition processing."""
+    orders_base = raw_root / 'orders'
+    
+    if not orders_base.is_dir():
+        print(f"Orders directory not found: {orders_base}")
+        return
+    
+    # Find all order_dt partitions
+    partitions = [p for p in orders_base.iterdir() 
+                  if p.is_dir() and p.name.startswith('order_dt=')]
+    
+    if not partitions:
+        print(f"No order date partitions found in: {orders_base}")
+        return
+    
+    # Sort partitions by date (newest first for incremental processing)
+    partitions.sort(key=lambda x: x.name.split('=')[1], reverse=True)
+    
+    print(f"Found {len(partitions)} order date partitions, processing newest unprocessed first...")
+    
+    # Process the latest unprocessed partition
+    for partition_dir in partitions:
+        print(f"Checking partition: {partition_dir.name}")
+        
+        # Look for orders_lines.csv file in this partition
+        lines_file = partition_dir / 'orders_lines.csv'
+        
+        if not lines_file.exists():
+            print(f"No orders_lines.csv found in partition {partition_dir.name}")
+            continue
+        
+        print(f"Found orders_lines.csv in partition {partition_dir.name}")
+        
+        # Check if this file has already been processed (for incremental loading)
+        if not dry_run and conn:
+            from scripts.utils.bronze_utils import already_processed
+            if already_processed(conn, lines_file):
+                print(f"  Orders lines file already processed: {lines_file.name}")
+                continue
+        
+        # Process this partition's orders lines file
+        print(f"  Processing orders lines file: {lines_file.name}")
+        ingest_file_to_bronze(
+            src_path=lines_file,
+            table_name='orders_lines',
+            schema=orders_lines_schema,
+            read_func=read_csv_with_schema,
+            lake_root=lake_root,
+            conn=conn,
+            dry_run=dry_run,
+        )
+        
+        # For incremental processing, stop after processing one file per run
+        # This prevents loading all 3-4M+ order lines at once and enables batched processing
+        print(f"  Completed processing partition: {partition_dir.name}")
+        return
+    
+    print("All order lines partitions have been processed or no unprocessed partitions found")
+
 def main():
     args = parse_args()
     raw_root = pathlib.Path(args.raw)
@@ -340,10 +460,12 @@ def main():
     load_exchange_rates(raw_root, lake_root, conn, args.dry_run)
     load_events(raw_root, lake_root, conn, args.dry_run)
     load_sensors(raw_root, lake_root, conn, args.dry_run)
+    load_orders_header(raw_root, lake_root, conn, args.dry_run)
+    load_orders_lines(raw_root, lake_root, conn, args.dry_run)
     load_shipments(raw_root, lake_root, conn, args.dry_run)
     load_returns(raw_root, lake_root, conn, args.dry_run)
 
-    print("✅ Bronze load completed for all implemented loaders (CSV, XLSX, JSONL, Parquet, Delta, Sensors).")
+    print("✅ Bronze load completed for all implemented loaders (CSV, XLSX, JSONL, Parquet, Delta, Sensors, Orders).")
 
 if __name__ == '__main__':
     main()
