@@ -370,3 +370,146 @@ def write_rejects_summary(validation_result: ValidationResult, table_name: str, 
     print(f"  • Wrote validation summary to: {summary_file}")
     
     return str(summary_file)
+
+
+def generate_processing_report(lake_root, timestamp: dt.datetime = None) -> str:
+    """
+    Generate a comprehensive processing report for all tables.
+    
+    Args:
+        lake_root: Path to lake root directory
+        timestamp: Processing timestamp (defaults to current time)
+        
+    Returns:
+        Path to the generated report file
+    """
+    import json
+    import os
+    
+    if timestamp is None:
+        timestamp = dt.datetime.utcnow()
+    
+    # Create reports directory
+    reports_dir = lake_root / '_reports'
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Initialize report data
+    report_data = {
+        'report_timestamp': timestamp.isoformat(),
+        'report_type': 'comprehensive_processing_report',
+        'tables': {},
+        'summary': {
+            'total_tables': 0,
+            'total_valid_records': 0,
+            'total_rejected_records': 0,
+            'overall_success_rate': 0.0,
+            'error_categories': {}
+        }
+    }
+    
+    # Scan rejects directory for validation summaries
+    rejects_dir = lake_root / '_rejects'
+    if rejects_dir.exists():
+        for table_dir in rejects_dir.iterdir():
+            if table_dir.is_dir():
+                table_name = table_dir.name
+                table_stats = {
+                    'table_name': table_name,
+                    'total_valid_records': 0,
+                    'total_rejected_records': 0,
+                    'success_rate': 100.0,
+                    'error_breakdown': {},
+                    'recent_summaries': []
+                }
+                
+                # Find recent validation summaries
+                summary_files = list(table_dir.glob('validation_summary_*.json'))
+                summary_files.sort(key=lambda x: x.name, reverse=True)  # Most recent first
+                
+                for summary_file in summary_files[:5]:  # Last 5 summaries
+                    try:
+                        with open(summary_file, 'r') as f:
+                            summary = json.load(f)
+                        
+                        table_stats['total_valid_records'] += summary.get('valid_rows', 0)
+                        table_stats['total_rejected_records'] += summary.get('invalid_rows', 0)
+                        
+                        # Aggregate error breakdown
+                        for error_type, count in summary.get('error_summary', {}).items():
+                            table_stats['error_breakdown'][error_type] = table_stats['error_breakdown'].get(error_type, 0) + count
+                        
+                        # Add summary to recent list
+                        table_stats['recent_summaries'].append({
+                            'timestamp': summary.get('processing_timestamp'),
+                            'valid_rows': summary.get('valid_rows', 0),
+                            'invalid_rows': summary.get('invalid_rows', 0),
+                            'success_rate': summary.get('success_rate', 100.0)
+                        })
+                        
+                    except Exception as e:
+                        print(f"    Warning: Could not read summary file {summary_file}: {e}")
+                        continue
+                
+                # Calculate success rate for this table
+                total_records = table_stats['total_valid_records'] + table_stats['total_rejected_records']
+                if total_records > 0:
+                    table_stats['success_rate'] = (table_stats['total_valid_records'] / total_records) * 100.0
+                
+                report_data['tables'][table_name] = table_stats
+                report_data['summary']['total_tables'] += 1
+                report_data['summary']['total_valid_records'] += table_stats['total_valid_records']
+                report_data['summary']['total_rejected_records'] += table_stats['total_rejected_records']
+                
+                # Aggregate error categories
+                for error_type, count in table_stats['error_breakdown'].items():
+                    report_data['summary']['error_categories'][error_type] = report_data['summary']['error_categories'].get(error_type, 0) + count
+    
+    # Calculate overall success rate
+    total_all_records = report_data['summary']['total_valid_records'] + report_data['summary']['total_rejected_records']
+    if total_all_records > 0:
+        report_data['summary']['overall_success_rate'] = (report_data['summary']['total_valid_records'] / total_all_records) * 100.0
+    else:
+        report_data['summary']['overall_success_rate'] = 100.0
+    
+    # Create report filename with timestamp
+    timestamp_str = timestamp.strftime('%Y%m%d_%H%M%S')
+    report_file = reports_dir / f"processing_report_{timestamp_str}.json"
+    
+    # Write comprehensive report
+    with open(report_file, 'w', encoding='utf-8') as f:
+        json.dump(report_data, f, indent=2, default=str)
+    
+    print(f"  • Generated comprehensive processing report: {report_file}")
+    
+    # Also create a human-readable summary
+    summary_file = reports_dir / f"processing_summary_{timestamp_str}.txt"
+    with open(summary_file, 'w', encoding='utf-8') as f:
+        f.write(f"Bronze Layer Processing Report\n")
+        f.write(f"Generated: {timestamp.isoformat()}\n")
+        f.write(f"="*50 + "\n\n")
+        
+        f.write(f"OVERALL SUMMARY:\n")
+        f.write(f"  Total Tables Processed: {report_data['summary']['total_tables']}\n")
+        f.write(f"  Total Valid Records: {report_data['summary']['total_valid_records']:,}\n")
+        f.write(f"  Total Rejected Records: {report_data['summary']['total_rejected_records']:,}\n")
+        f.write(f"  Overall Success Rate: {report_data['summary']['overall_success_rate']:.2f}%\n\n")
+        
+        if report_data['summary']['error_categories']:
+            f.write(f"ERROR BREAKDOWN:\n")
+            for error_type, count in sorted(report_data['summary']['error_categories'].items()):
+                f.write(f"  {error_type}: {count:,} records\n")
+            f.write("\n")
+        
+        f.write(f"TABLE DETAILS:\n")
+        for table_name, stats in report_data['tables'].items():
+            f.write(f"  {table_name}:\n")
+            f.write(f"    Valid Records: {stats['total_valid_records']:,}\n")
+            f.write(f"    Rejected Records: {stats['total_rejected_records']:,}\n")
+            f.write(f"    Success Rate: {stats['success_rate']:.2f}%\n")
+            if stats['error_breakdown']:
+                f.write(f"    Top Errors: {', '.join(list(stats['error_breakdown'].keys())[:3])}\n")
+            f.write("\n")
+    
+    print(f"  • Generated human-readable summary: {summary_file}")
+    
+    return str(report_file)
