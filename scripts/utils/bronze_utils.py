@@ -188,3 +188,17 @@ def read_jsonl_with_schema(file_path, schema):
         else:
             # Return empty table with correct schema if no valid records
             return pa.table([], schema=schema)
+        
+
+def read_parquet_with_schema(file_path, schema):
+    """Read Parquet file and validate against schema."""
+    print(f"Reading and validating Parquet data...")
+    import pyarrow.parquet as pq
+    
+    # Read Parquet file using PyArrow
+    tbl = pq.read_table(file_path)
+    
+    print(f"Loaded {len(tbl)} records from Parquet")
+    
+    # Cast to target schema for validation
+    return tbl.cast(schema, safe=False)
