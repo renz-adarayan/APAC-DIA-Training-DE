@@ -15,11 +15,54 @@ except Exception as e:
 
 
 def calculate_file_hash(file_path):
-    """Calculate SHA-256 hash of file for integrity checking."""
+    """Calculate SHA-256 hash of file or directory for integrity checking."""
+    file_path = pathlib.Path(file_path)
     hash_sha256 = hashlib.sha256()
-    with open(file_path, "rb") as f:
-        for chunk in iter(lambda: f.read(4096), b""):
-            hash_sha256.update(chunk)
+    
+    if file_path.is_file():
+        # Handle single file
+        with open(file_path, "rb") as f:
+            for chunk in iter(lambda: f.read(4096), b""):
+                hash_sha256.update(chunk)
+    elif file_path.is_dir():
+        # Handle directory (e.g., Delta table directory)
+        return calculate_directory_hash(file_path)
+    else:
+        raise FileNotFoundError(f"Path does not exist: {file_path}")
+    
+    return hash_sha256.hexdigest()
+
+
+def calculate_directory_hash(dir_path):
+    """Calculate SHA-256 hash of directory contents for integrity checking."""
+    dir_path = pathlib.Path(dir_path)
+    hash_sha256 = hashlib.sha256()
+    
+    # Get all files in directory, sorted for consistent hashing
+    all_files = []
+    for file_path in dir_path.rglob('*'):
+        if file_path.is_file():
+            all_files.append(file_path)
+    
+    all_files.sort()  # Ensure consistent ordering
+    
+    for file_path in all_files:
+        # Include relative path in hash for structure integrity
+        relative_path = file_path.relative_to(dir_path)
+        hash_sha256.update(str(relative_path).encode('utf-8'))
+        
+        # Include file modification time and size for quick change detection
+        stat = file_path.stat()
+        hash_sha256.update(str(stat.st_mtime).encode('utf-8'))
+        hash_sha256.update(str(stat.st_size).encode('utf-8'))
+        
+        # For small files (like Delta log files), include full content
+        # For large files (like Parquet), use metadata only for performance
+        if stat.st_size < 1024 * 1024:  # 1MB threshold
+            with open(file_path, "rb") as f:
+                for chunk in iter(lambda: f.read(4096), b""):
+                    hash_sha256.update(chunk)
+    
     return hash_sha256.hexdigest()
 
 
@@ -48,7 +91,13 @@ def ingest_file_to_bronze(src_path, table_name, schema, read_func, lake_root, co
     print(f"Processing {table_name} file: {src_path}")
     
     # Get file metadata
-    file_size_bytes = src_path.stat().st_size
+    if src_path.is_file():
+        file_size_bytes = src_path.stat().st_size
+    elif src_path.is_dir():
+        # Calculate total size of all files in directory
+        file_size_bytes = sum(f.stat().st_size for f in src_path.rglob('*') if f.is_file())
+    else:
+        file_size_bytes = 0
     
     if dry_run:
         print(f"DRY RUN: Would process {src_path} ({file_size_bytes} bytes)")
