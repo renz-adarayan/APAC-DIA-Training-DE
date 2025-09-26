@@ -267,5 +267,21 @@ def read_delta_with_schema(file_path, schema):
     
     print(f"Loaded {len(tbl)} records from Delta table")
     
-    # Cast to target schema for validation
-    return tbl.cast(schema, safe=False)
+    # Get expected field names from target schema
+    expected_fields = [field.name for field in schema]
+    
+    # Select only columns that exist in both the table and target schema
+    available_fields = [col for col in tbl.column_names if col in expected_fields]
+    missing_fields = [field for field in expected_fields if field not in tbl.column_names]
+    extra_fields = [col for col in tbl.column_names if col not in expected_fields]
+    
+    if extra_fields:
+        print(f"Ignoring extra fields not in target schema: {extra_fields}")
+    if missing_fields:
+        print(f"Warning: Missing expected fields: {missing_fields}")
+    
+    # Select only the available columns that match the schema
+    tbl_filtered = tbl.select(available_fields)
+    
+    # Cast to target schema for validation (will only include matching fields)
+    return tbl_filtered.cast(schema, safe=False)
