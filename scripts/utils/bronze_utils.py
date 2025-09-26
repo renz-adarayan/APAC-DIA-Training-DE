@@ -80,7 +80,7 @@ def write_delta(table, base_path, mode='append', partition_by=None, merge_schema
 
 
 def ingest_file_to_bronze(src_path, table_name, schema, read_func, lake_root, conn, dry_run=False):
-    """Utility function to process file"""
+    """Enhanced utility function to process file with validation and reject handling"""
     if not src_path.exists():
         print(f"{table_name.title()} file not found: {src_path}")
         return
@@ -115,14 +115,63 @@ def ingest_file_to_bronze(src_path, table_name, schema, read_func, lake_root, co
         print(f"  • Calculating file hash for integrity...")
         file_hash = calculate_file_hash(src_path)
         
-        # Use the provided read function to load and validate data
-        tbl = read_func(src_path, schema)
+        # Use the provided read function to load raw data (no validation yet)
+        print(f"  • Loading raw data...")
+        raw_table = read_func(src_path, schema, validate=False)  # Pass validate=False to skip validation in read_func
         
-        print(f"  • Adding audit columns...")
-        now = pa.scalar(dt.datetime.utcnow(), type=pa.timestamp('us'))
-        tbl = tbl.append_column('ingestion_ts', pa.array([now.as_py()]*len(tbl), type=pa.timestamp('us')))
+        # Enhanced validation with detailed error capture
+        print(f"  • Performing enhanced schema validation...")
+        src_filename = src_path.name
         
-        print(f"  • Writing to Parquet and Delta formats...")
+        # Import validation utilities
+        try:
+            from scripts.utils.validation_utils import validate_table_with_errors, write_rejects_to_lake, write_rejects_summary
+        except ImportError:
+            # Fallback to basic validation if validation_utils not available
+            print(f"  • Validation utilities not available, using basic validation...")
+            tbl = raw_table.cast(schema, safe=False)
+            
+            # Add basic audit columns
+            now = pa.scalar(dt.datetime.utcnow(), type=pa.timestamp('us'))
+            tbl = tbl.append_column('src_filename', pa.array([src_filename]*len(tbl)))
+            tbl = tbl.append_column('src_row_hash', pa.array(['basic_hash']*len(tbl)))  # Placeholder
+            tbl = tbl.append_column('ingestion_ts', pa.array([now.as_py()]*len(tbl), type=pa.timestamp('us')))
+            
+            validation_result = None
+        else:
+            # Use enhanced validation
+            validation_result = validate_table_with_errors(raw_table, schema, src_filename)
+            
+            # Handle validation results
+            if validation_result.invalid_rows > 0:
+                print(f"  • Found {validation_result.invalid_rows} invalid rows out of {validation_result.total_rows}")
+                print(f"  • Success rate: {validation_result.success_rate:.1f}%")
+                print(f"  • Error breakdown: {validation_result.error_summary}")
+                
+                # Write rejects to lake/_rejects/
+                reject_count = write_rejects_to_lake(
+                    validation_result.invalid_records, 
+                    table_name, 
+                    lake_root, 
+                    start_time
+                )
+                
+                # Write validation summary
+                write_rejects_summary(validation_result, table_name, lake_root, start_time)
+            
+            # Use the validated table (with audit columns already added)
+            tbl = validation_result.valid_table
+            
+            if tbl is None or len(tbl) == 0:
+                print(f"  • No valid records to process after validation")
+                # Mark as processed with zero valid rows
+                processing_duration_ms = int((dt.datetime.utcnow() - start_time).total_seconds() * 1000)
+                mark_processed(conn, src_path, 0, reject_count, file_hash, 'SUCCESS',
+                              f"All {validation_result.total_rows} rows rejected during validation", 
+                              file_size_bytes, processing_duration_ms)
+                return
+        
+        print(f"  • Writing {len(tbl)} valid records to Parquet and Delta formats...")
         pq_base = lake_root / 'bronze' / 'parquet' / table_name
         dl_base = lake_root / 'bronze' / 'delta' / table_name
         write_parquet_partitioned(tbl, pq_base, partitioning=None)
@@ -135,8 +184,10 @@ def ingest_file_to_bronze(src_path, table_name, schema, read_func, lake_root, co
         mark_processed(conn, src_path, len(tbl), reject_count, file_hash, status,
                       error_message, file_size_bytes, processing_duration_ms)
         
-        print(f"✅ Successfully processed {table_name}: {len(tbl)} rows in {processing_duration_ms}ms")
+        print(f"✅ Successfully processed {table_name}: {len(tbl)} valid rows, {reject_count} rejects in {processing_duration_ms}ms")
         print(f"   File hash: {file_hash[:16]}... | Size: {file_size_bytes} bytes")
+        if validation_result and validation_result.invalid_rows > 0:
+            print(f"   Data quality: {validation_result.success_rate:.1f}% success rate")
         
     except Exception as e:
         # Handle processing failure
@@ -166,24 +217,34 @@ def mark_processed(conn, src_path, row_count, reject_count=0, file_hash=None, st
     ''', [str(src_path), dt.datetime.utcnow(), row_count, reject_count, file_hash, status, error_message, file_size_bytes, processing_duration_ms])
 
 
-def read_csv_with_schema(file_path, schema):
-    """Read CSV file and validate against schema."""
-    print(f"  • Reading and validating CSV data...")
+def read_csv_with_schema(file_path, schema, validate=True):
+    """Read CSV file and optionally validate against schema."""
+    print(f"  • Reading CSV data...")
     tbl = pacsv.read_csv(file_path, read_options=pacsv.ReadOptions(encoding='utf-8'))
-    return tbl.cast(schema, safe=False)
+    
+    if validate:
+        print(f"  • Validating CSV data against schema...")
+        return tbl.cast(schema, safe=False)
+    else:
+        return tbl
 
 
-def read_xlsx_with_schema(file_path, schema):
-    """Read XLSX file and validate against schema."""
-    print(f"  • Reading and validating XLSX data...")
+def read_xlsx_with_schema(file_path, schema, validate=True):
+    """Read XLSX file and optionally validate against schema."""
+    print(f"  • Reading XLSX data...")
     df = pd.read_excel(file_path, engine='openpyxl')
     tbl = pa.Table.from_pandas(df)
-    return tbl.cast(schema, safe=False)
+    
+    if validate:
+        print(f"  • Validating XLSX data against schema...")
+        return tbl.cast(schema, safe=False)
+    else:
+        return tbl
 
 
-def read_jsonl_with_schema(file_path, schema):
-    """Read JSONL file and validate against schema."""
-    print(f"Reading and validating JSONL data...")
+def read_jsonl_with_schema(file_path, schema, validate=True):
+    """Read JSONL file and optionally validate against schema."""
+    print(f"  • Reading JSONL data...")
     import json
     
     # Check if schema expects raw JSON string or parsed fields
@@ -204,12 +265,16 @@ def read_jsonl_with_schema(file_path, schema):
                         print(f"    Warning: Invalid JSON on line {line_num}: {e}")
                         continue
         
-        print(f"Loaded {len(records)} records from JSONL (stored as raw JSON strings)")
+        print(f"    Loaded {len(records)} records from JSONL (stored as raw JSON strings)")
         
         # Convert to PyArrow table
         if records:
             tbl = pa.Table.from_pylist(records)
-            return tbl.cast(schema, safe=False)
+            if validate:
+                print(f"  • Validating JSONL data against schema...")
+                return tbl.cast(schema, safe=False)
+            else:
+                return tbl
         else:
             # Return empty table with correct schema if no valid records
             return pa.table([], schema=schema)
@@ -228,34 +293,42 @@ def read_jsonl_with_schema(file_path, schema):
                         print(f"    Warning: Invalid JSON on line {line_num}: {e}")
                         continue
         
-        print(f"Loaded {len(records)} records from JSONL (parsed as structured data)")
+        print(f"    Loaded {len(records)} records from JSONL (parsed as structured data)")
         
         # Convert to PyArrow table
         if records:
             tbl = pa.Table.from_pylist(records)
-            return tbl.cast(schema, safe=False)
+            if validate:
+                print(f"  • Validating JSONL data against schema...")
+                return tbl.cast(schema, safe=False)
+            else:
+                return tbl
         else:
             # Return empty table with correct schema if no valid records
             return pa.table([], schema=schema)
         
 
-def read_parquet_with_schema(file_path, schema):
-    """Read Parquet file and validate against schema."""
-    print(f"Reading and validating Parquet data...")
+def read_parquet_with_schema(file_path, schema, validate=True):
+    """Read Parquet file and optionally validate against schema."""
+    print(f"  • Reading Parquet data...")
     import pyarrow.parquet as pq
     
     # Read Parquet file using PyArrow
     tbl = pq.read_table(file_path)
     
-    print(f"Loaded {len(tbl)} records from Parquet")
+    print(f"    Loaded {len(tbl)} records from Parquet")
     
-    # Cast to target schema for validation
-    return tbl.cast(schema, safe=False)
+    if validate:
+        print(f"  • Validating Parquet data against schema...")
+        # Cast to target schema for validation
+        return tbl.cast(schema, safe=False)
+    else:
+        return tbl
 
 
-def read_delta_with_schema(file_path, schema):
-    """Read Delta table and validate against schema."""
-    print(f"Reading and validating Delta table data...")
+def read_delta_with_schema(file_path, schema, validate=True):
+    """Read Delta table and optionally validate against schema."""
+    print(f"  • Reading Delta table data...")
     try:
         from deltalake import DeltaTable
     except ImportError:
@@ -265,23 +338,27 @@ def read_delta_with_schema(file_path, schema):
     dt = DeltaTable(str(file_path))
     tbl = dt.to_pyarrow_table()
     
-    print(f"Loaded {len(tbl)} records from Delta table")
+    print(f"    Loaded {len(tbl)} records from Delta table")
     
-    # Get expected field names from target schema
-    expected_fields = [field.name for field in schema]
-    
-    # Select only columns that exist in both the table and target schema
-    available_fields = [col for col in tbl.column_names if col in expected_fields]
-    missing_fields = [field for field in expected_fields if field not in tbl.column_names]
-    extra_fields = [col for col in tbl.column_names if col not in expected_fields]
-    
-    if extra_fields:
-        print(f"Ignoring extra fields not in target schema: {extra_fields}")
-    if missing_fields:
-        print(f"Warning: Missing expected fields: {missing_fields}")
-    
-    # Select only the available columns that match the schema
-    tbl_filtered = tbl.select(available_fields)
-    
-    # Cast to target schema for validation (will only include matching fields)
-    return tbl_filtered.cast(schema, safe=False)
+    if validate:
+        print(f"  • Validating Delta data against schema...")
+        # Get expected field names from target schema
+        expected_fields = [field.name for field in schema]
+        
+        # Select only columns that exist in both the table and target schema
+        available_fields = [col for col in tbl.column_names if col in expected_fields]
+        missing_fields = [field for field in expected_fields if field not in tbl.column_names]
+        extra_fields = [col for col in tbl.column_names if col not in expected_fields]
+        
+        if extra_fields:
+            print(f"    Ignoring extra fields not in target schema: {extra_fields}")
+        if missing_fields:
+            print(f"    Warning: Missing expected fields: {missing_fields}")
+        
+        # Select only the available columns that match the schema
+        tbl_filtered = tbl.select(available_fields)
+        
+        # Cast to target schema for validation (will only include matching fields)
+        return tbl_filtered.cast(schema, safe=False)
+    else:
+        return tbl
