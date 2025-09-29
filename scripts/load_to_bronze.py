@@ -6,6 +6,7 @@ import pathlib
 import datetime as dt
 import sys
 import duckdb
+from typing import Optional, List
 
 # Package import bootstrap
 PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -46,6 +47,10 @@ def parse_args():
     ap.add_argument('--lake', type=str, default='lake')
     ap.add_argument('--manifest', type=str, default='duckdb/warehouse.duckdb')
     ap.add_argument('--dry-run', action='store_true')
+    ap.add_argument('--cutoff-date', type=str, default=None,
+                    help='Optional YYYY-MM-DD cutoff; partitions older than this are pruned (events/order partitions)')
+    ap.add_argument('--collect-partition-stats', action='store_true',
+                    help='Collect partition statistics after ingestion (events, orders, sensors)')
     return ap.parse_args()
 
 def ensure_dirs(lake_root):
@@ -67,6 +72,128 @@ def init_manifest(conn):
             processing_duration_ms INTEGER
         )
     ''')
+    # Partition statistics registry
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS partition_stats (
+            table_name TEXT,
+            partition_path TEXT,
+            partition_value TEXT,
+            row_count BIGINT,
+            file_count INTEGER,
+            total_size_bytes BIGINT,
+            min_mtime TIMESTAMP,
+            max_mtime TIMESTAMP,
+            fully_processed BOOLEAN,
+            collected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (table_name, partition_path)
+        )
+    ''')
+
+def _should_prune_partition(partition_name: str, cutoff_date: Optional[dt.date], prefix: str) -> bool:
+    """Return True if partition should be pruned based on cutoff date.
+    partition_name examples: event_dt=2024-11-04, order_dt=2024-11-02
+    prefix is 'event_dt=' or 'order_dt='
+    """
+    if not cutoff_date:
+        return False
+    try:
+        part_date_str = partition_name.split('=')[1]
+        part_date = dt.date.fromisoformat(part_date_str)
+    except Exception:
+        return False
+    return part_date < cutoff_date
+
+def _update_partition_stats_events(raw_root: pathlib.Path, conn):
+    events_base = raw_root / 'events'
+    if not events_base.exists():
+        return
+    partitions = [p for p in events_base.iterdir() if p.is_dir() and p.name.startswith('event_dt=')]
+    for p in partitions:
+        files = list(p.glob('*.jsonl'))
+        file_count = len(files)
+        if file_count == 0:
+            continue
+        total_size = sum(f.stat().st_size for f in files)
+        mtimes = [dt.datetime.utcfromtimestamp(f.stat().st_mtime) for f in files]
+        # Determine processed status and row counts from manifest
+        manifest_rows = conn.execute(
+            "SELECT SUM(row_count), COUNT(*) FROM manifest_processed_files WHERE src_path IN (%s)" %
+            ','.join(['?']*file_count), [str(f) for f in files]
+        ).fetchone()
+        sum_rows = manifest_rows[0] if manifest_rows[0] is not None else None
+        processed_files = manifest_rows[1]
+        fully_processed = processed_files == file_count
+        conn.execute('''
+            INSERT OR REPLACE INTO partition_stats
+            (table_name, partition_path, partition_value, row_count, file_count, total_size_bytes, min_mtime, max_mtime, fully_processed)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', [
+            'events', str(p), p.name.split('=')[1], sum_rows, file_count, total_size,
+            min(mtimes), max(mtimes), fully_processed
+        ])
+
+def _update_partition_stats_orders(raw_root: pathlib.Path, conn):
+    orders_base = raw_root / 'orders'
+    if not orders_base.exists():
+        return
+    partitions = [p for p in orders_base.iterdir() if p.is_dir() and p.name.startswith('order_dt=')]
+    for p in partitions:
+        files = list(p.glob('orders_*.csv'))  # header / lines
+        if not files:
+            continue
+        total_size = sum(f.stat().st_size for f in files)
+        mtimes = [dt.datetime.utcfromtimestamp(f.stat().st_mtime) for f in files]
+        manifest_rows = conn.execute(
+            "SELECT SUM(row_count), COUNT(*) FROM manifest_processed_files WHERE src_path IN (%s)" %
+            ','.join(['?']*len(files)), [str(f) for f in files]
+        ).fetchone()
+        sum_rows = manifest_rows[0] if manifest_rows[0] is not None else None
+        processed_files = manifest_rows[1]
+        fully_processed = processed_files == len(files)
+        conn.execute('''
+            INSERT OR REPLACE INTO partition_stats
+            (table_name, partition_path, partition_value, row_count, file_count, total_size_bytes, min_mtime, max_mtime, fully_processed)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', [
+            'orders', str(p), p.name.split('=')[1], sum_rows, len(files), total_size,
+            min(mtimes), max(mtimes), fully_processed
+        ])
+
+def _update_partition_stats_sensors(raw_root: pathlib.Path, conn):
+    sensors_base = raw_root / 'sensors'
+    if not sensors_base.exists():
+        return
+    store_partitions = [p for p in sensors_base.iterdir() if p.is_dir() and p.name.startswith('store_id=')]
+    for store in store_partitions:
+        month_parts = [m for m in store.iterdir() if m.is_dir() and m.name.startswith('month=')]
+        for m in month_parts:
+            files = list(m.glob('*.csv'))
+            if not files:
+                continue
+            total_size = sum(f.stat().st_size for f in files)
+            mtimes = [dt.datetime.utcfromtimestamp(f.stat().st_mtime) for f in files]
+            manifest_rows = conn.execute(
+                "SELECT SUM(row_count), COUNT(*) FROM manifest_processed_files WHERE src_path IN (%s)" %
+                ','.join(['?']*len(files)), [str(f) for f in files]
+            ).fetchone()
+            sum_rows = manifest_rows[0] if manifest_rows[0] is not None else None
+            processed_files = manifest_rows[1]
+            fully_processed = processed_files == len(files)
+            partition_value = f"{store.name.split('=')[1]}_{m.name.split('=')[1]}"
+            conn.execute('''
+                INSERT OR REPLACE INTO partition_stats
+                (table_name, partition_path, partition_value, row_count, file_count, total_size_bytes, min_mtime, max_mtime, fully_processed)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', [
+                'sensors', str(m), partition_value, sum_rows, len(files), total_size,
+                min(mtimes), max(mtimes), fully_processed
+            ])
+
+def update_all_partition_stats(raw_root: pathlib.Path, conn):
+    _update_partition_stats_events(raw_root, conn)
+    _update_partition_stats_orders(raw_root, conn)
+    _update_partition_stats_sensors(raw_root, conn)
+
 
 def load_customers(raw_root, lake_root, conn, dry_run=False):
     """Wrapper to load customers via shared process utility."""
@@ -127,7 +254,7 @@ def load_exchange_rates(raw_root, lake_root, conn, dry_run=False):
         dry_run=dry_run,
     )
 
-def load_events(raw_root, lake_root, conn, dry_run=False):
+def load_events(raw_root, lake_root, conn, dry_run=False, cutoff_date: Optional[dt.date]=None):
     """Wrapper to load events JSONL via shared process utility with incremental partition processing."""
     events_base = raw_root / 'events'
     
@@ -157,8 +284,14 @@ def load_events(raw_root, lake_root, conn, dry_run=False):
             )
         return
     
-    # Sort partitions by date (newest first for incremental processing)
+    # Sort partitions by date (newest first for incremental processing) then prune
     partitions.sort(key=lambda x: x.name, reverse=True)
+    if cutoff_date:
+        before_len = len(partitions)
+        partitions = [p for p in partitions if not _should_prune_partition(p.name, cutoff_date, 'event_dt=')]
+        pruned = before_len - len(partitions)
+        if pruned:
+            print(f"Pruned {pruned} event partitions older than cutoff {cutoff_date}")
     
     print(f"Found {len(partitions)} event partitions, processing newest unprocessed first...")
     
@@ -230,7 +363,7 @@ def load_returns(raw_root, lake_root, conn, dry_run=False):
         dry_run=dry_run,
     )
 
-def load_sensors(raw_root, lake_root, conn, dry_run=False):
+def load_sensors(raw_root, lake_root, conn, dry_run=False):  # sensors partition pruning by date not implemented yet
     """Wrapper to load sensors CSV files with incremental partition processing."""
     sensors_base = raw_root / 'sensors'
     
@@ -315,7 +448,7 @@ def load_sensors(raw_root, lake_root, conn, dry_run=False):
     
     print("All sensor partitions have been processed or no unprocessed partitions found")
 
-def load_orders_header(raw_root, lake_root, conn, dry_run=False):
+def load_orders_header(raw_root, lake_root, conn, dry_run=False, cutoff_date: Optional[dt.date]=None):
     """Wrapper to load orders header CSV files with incremental partition processing."""
     orders_base = raw_root / 'orders'
     
@@ -331,8 +464,14 @@ def load_orders_header(raw_root, lake_root, conn, dry_run=False):
         print(f"No order date partitions found in: {orders_base}")
         return
     
-    # Sort partitions by date (newest first for incremental processing)
+    # Sort partitions by date (newest first) then apply cutoff pruning if provided
     partitions.sort(key=lambda x: x.name.split('=')[1], reverse=True)
+    if cutoff_date:
+        before_len = len(partitions)
+        partitions = [p for p in partitions if not _should_prune_partition(p.name, cutoff_date, 'order_dt=')]
+        pruned = before_len - len(partitions)
+        if pruned:
+            print(f"Pruned {pruned} orders_header partitions older than cutoff {cutoff_date}")
     
     print(f"Found {len(partitions)} order date partitions, processing newest unprocessed first...")
     
@@ -375,7 +514,7 @@ def load_orders_header(raw_root, lake_root, conn, dry_run=False):
     
     print("All order header partitions have been processed or no unprocessed partitions found")
 
-def load_orders_lines(raw_root, lake_root, conn, dry_run=False):
+def load_orders_lines(raw_root, lake_root, conn, dry_run=False, cutoff_date: Optional[dt.date]=None):
     """Wrapper to load orders lines CSV files with incremental partition processing."""
     orders_base = raw_root / 'orders'
     
@@ -391,8 +530,14 @@ def load_orders_lines(raw_root, lake_root, conn, dry_run=False):
         print(f"No order date partitions found in: {orders_base}")
         return
     
-    # Sort partitions by date (newest first for incremental processing)
+    # Sort partitions by date (newest first) then apply cutoff pruning if provided
     partitions.sort(key=lambda x: x.name.split('=')[1], reverse=True)
+    if cutoff_date:
+        before_len = len(partitions)
+        partitions = [p for p in partitions if not _should_prune_partition(p.name, cutoff_date, 'order_dt=')]
+        pruned = before_len - len(partitions)
+        if pruned:
+            print(f"Pruned {pruned} orders_lines partitions older than cutoff {cutoff_date}")
     
     print(f"Found {len(partitions)} order date partitions, processing newest unprocessed first...")
     
@@ -439,13 +584,21 @@ def main():
     args = parse_args()
     raw_root = pathlib.Path(args.raw)
     lake_root = pathlib.Path(args.lake)
-    
+
     if args.dry_run:
         print("=== DRY RUN MODE - No data will be written ===")
-    
+
     ensure_dirs(lake_root)
     pathlib.Path(args.manifest).parent.mkdir(parents=True, exist_ok=True)
-    
+
+    cutoff_date = None
+    if args.cutoff_date:
+        try:
+            cutoff_date = dt.date.fromisoformat(args.cutoff_date)
+            print(f"Using cutoff date for partition pruning: {cutoff_date}")
+        except ValueError:
+            print(f"Invalid --cutoff-date value '{args.cutoff_date}', expected YYYY-MM-DD. Ignoring.")
+
     if not args.dry_run:
         conn = duckdb.connect(args.manifest)
         conn.execute("INSTALL delta; LOAD delta;")
@@ -458,14 +611,22 @@ def main():
     load_stores(raw_root, lake_root, conn, args.dry_run)
     load_suppliers(raw_root, lake_root, conn, args.dry_run)
     load_exchange_rates(raw_root, lake_root, conn, args.dry_run)
-    load_events(raw_root, lake_root, conn, args.dry_run)
+    load_events(raw_root, lake_root, conn, args.dry_run, cutoff_date=cutoff_date)
     load_sensors(raw_root, lake_root, conn, args.dry_run)
-    load_orders_header(raw_root, lake_root, conn, args.dry_run)
-    load_orders_lines(raw_root, lake_root, conn, args.dry_run)
+    load_orders_header(raw_root, lake_root, conn, args.dry_run, cutoff_date=cutoff_date)
+    load_orders_lines(raw_root, lake_root, conn, args.dry_run, cutoff_date=cutoff_date)
     load_shipments(raw_root, lake_root, conn, args.dry_run)
     load_returns(raw_root, lake_root, conn, args.dry_run)
 
-    print("✅ Bronze load completed for all implemented loaders (CSV, XLSX, JSONL, Parquet, Delta, Sensors, Orders).")
+    if conn and args.collect_partition_stats and not args.dry_run:
+        print("Collecting partition statistics...")
+        update_all_partition_stats(raw_root, conn)
+        # Quick summary output
+        summary = conn.execute("SELECT table_name, COUNT(*), SUM(file_count), SUM(row_count) FROM partition_stats GROUP BY 1").fetchall()
+        for row in summary:
+            print(f"Partition stats -> table={row[0]} partitions={row[1]} files={row[2]} rows={row[3]}")
+
+    print("✅ Bronze load completed (with partition pruning/stat collection where requested).")
 
 if __name__ == '__main__':
     main()

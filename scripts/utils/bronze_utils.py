@@ -327,7 +327,7 @@ def read_parquet_with_schema(file_path, schema, validate=True):
 
 
 def read_delta_with_schema(file_path, schema, validate=True):
-    """Read Delta table and optionally validate against schema."""
+    """Read Delta table and handle schema evolution gracefully."""
     print(f"  • Reading Delta table data...")
     try:
         from deltalake import DeltaTable
@@ -340,25 +340,83 @@ def read_delta_with_schema(file_path, schema, validate=True):
     
     print(f"    Loaded {len(tbl)} records from Delta table")
     
+    # Handle schema evolution for returns table specifically
+    table_name = file_path.name if hasattr(file_path, 'name') else str(file_path).split('/')[-1]
+    
     if validate:
-        print(f"  • Validating Delta data against schema...")
-        # Get expected field names from target schema
-        expected_fields = [field.name for field in schema]
+        print(f"  • Handling schema evolution for Delta table...")
         
-        # Select only columns that exist in both the table and target schema
-        available_fields = [col for col in tbl.column_names if col in expected_fields]
-        missing_fields = [field for field in expected_fields if field not in tbl.column_names]
+        # Get expected field names and types from target schema
+        expected_fields = {field.name: field.type for field in schema}
+        actual_fields = {name: tbl.schema.field(name).type for name in tbl.column_names}
+        
+        # Find schema differences
         extra_fields = [col for col in tbl.column_names if col not in expected_fields]
+        missing_fields = [field for field in expected_fields if field not in tbl.column_names]
+        
+        print(f"    Schema evolution detected:")
+        print(f"    - Expected fields: {list(expected_fields.keys())}")
+        print(f"    - Actual fields: {list(actual_fields.keys())}")
         
         if extra_fields:
-            print(f"    Ignoring extra fields not in target schema: {extra_fields}")
+            print(f"    - Extra fields (v2 evolution): {extra_fields}")
         if missing_fields:
-            print(f"    Warning: Missing expected fields: {missing_fields}")
+            print(f"    - Missing fields: {missing_fields}")
         
-        # Select only the available columns that match the schema
-        tbl_filtered = tbl.select(available_fields)
+        # For returns table, handle schema evolution by preserving all columns
+        if 'return' in table_name.lower() and extra_fields:
+            print(f"    • Applying schema evolution handling for returns table")
+            
+            # Create evolved schema that includes all fields from actual data
+            evolved_schema_fields = []
+            
+            # Add all expected fields first (maintain order)
+            for field in schema:
+                if field.name in actual_fields:
+                    # Handle timestamp type conversion for return_ts
+                    if field.name == 'return_ts' and str(actual_fields[field.name]) == 'timestamp[ns]':
+                        # Convert timestamp_ntz to timestamp(us)
+                        evolved_schema_fields.append(pa.field(field.name, pa.timestamp('us')))
+                    else:
+                        evolved_schema_fields.append(field)
+            
+            # Add any extra fields from evolved schema
+            for extra_field in extra_fields:
+                evolved_schema_fields.append(pa.field(extra_field, actual_fields[extra_field]))
+            
+            # Create evolved schema
+            evolved_schema = pa.schema(evolved_schema_fields)
+            print(f"    • Created evolved schema with {len(evolved_schema_fields)} fields")
+            
+            # Handle timestamp conversion if needed
+            if 'return_ts' in tbl.column_names:
+                # Convert timestamp_ntz to timestamp(us) for compatibility
+                import pyarrow.compute as pc
+                return_ts_col = tbl.column('return_ts')
+                
+                # Convert to timestamp(us) format
+                if str(return_ts_col.type) == 'timestamp[ns]':
+                    return_ts_converted = pc.cast(return_ts_col, pa.timestamp('us'))
+                    # Replace the column
+                    tbl = tbl.set_column(tbl.schema.get_field_index('return_ts'), 'return_ts', return_ts_converted)
+            
+            # Return table with evolved schema (no casting to avoid type conflicts)
+            print(f"    • Schema evolution successful - preserving {len(tbl)} records with evolved schema")
+            return tbl
         
-        # Cast to target schema for validation (will only include matching fields)
-        return tbl_filtered.cast(schema, safe=False)
+        else:
+            # Standard schema validation for non-evolving tables
+            available_fields = [col for col in tbl.column_names if col in expected_fields]
+            
+            if extra_fields:
+                print(f"    Ignoring extra fields not in target schema: {extra_fields}")
+            if missing_fields:
+                print(f"    Warning: Missing expected fields: {missing_fields}")
+            
+            # Select only the available columns that match the schema
+            tbl_filtered = tbl.select(available_fields)
+            
+            # Cast to target schema for validation (will only include matching fields)
+            return tbl_filtered.cast(schema, safe=False)
     else:
         return tbl

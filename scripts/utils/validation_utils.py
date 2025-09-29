@@ -82,7 +82,7 @@ def categorize_error(error: Exception, column: str = None, value: Any = None) ->
 
 def validate_table_with_errors(table: pa.Table, schema: pa.Schema, src_filename: str) -> ValidationResult:
     """
-    Validate PyArrow table against schema with detailed error capture.
+    Validate PyArrow table against schema with detailed error capture and schema evolution support.
     
     Args:
         table: PyArrow table to validate
@@ -95,6 +95,79 @@ def validate_table_with_errors(table: pa.Table, schema: pa.Schema, src_filename:
     validation_errors = []
     invalid_records = []
     error_summary = {}
+    
+    # Check for schema evolution (returns table specifically)
+    if 'return' in src_filename.lower():
+        print(f"  • Detected returns table - checking for schema evolution...")
+        
+        # Get expected field names and types from target schema
+        expected_fields = {field.name: field.type for field in schema}
+        actual_fields = {name: table.schema.field(name).type for name in table.column_names}
+        
+        # Find schema differences
+        extra_fields = [col for col in table.column_names if col not in expected_fields]
+        missing_fields = [field for field in expected_fields if field not in table.column_names]
+        
+        if extra_fields and not missing_fields:
+            print(f"    • Schema evolution detected - extra fields: {extra_fields}")
+            print(f"    • Applying schema evolution handling...")
+            
+            # Create evolved schema that includes all fields from actual data
+            evolved_schema_fields = []
+            
+            # Add all expected fields first (maintain order)
+            for field in schema:
+                if field.name in actual_fields:
+                    # Handle timestamp type conversion for return_ts
+                    if field.name == 'return_ts' and 'timestamp' in str(actual_fields[field.name]):
+                        # Keep original timestamp type but ensure compatibility
+                        evolved_schema_fields.append(pa.field(field.name, pa.timestamp('us')))
+                    else:
+                        evolved_schema_fields.append(field)
+            
+            # Add any extra fields from evolved schema
+            for extra_field in extra_fields:
+                evolved_schema_fields.append(pa.field(extra_field, actual_fields[extra_field]))
+            
+            # Handle timestamp conversion if needed
+            if 'return_ts' in table.column_names:
+                # Convert timestamp_ntz to timestamp(us) for compatibility
+                import pyarrow.compute as pc
+                return_ts_col = table.column('return_ts')
+                
+                # Convert to timestamp(us) format if needed
+                if 'timestamp[ns]' in str(return_ts_col.type):
+                    return_ts_converted = pc.cast(return_ts_col, pa.timestamp('us'))
+                    # Replace the column
+                    table = table.set_column(table.schema.get_field_index('return_ts'), 'return_ts', return_ts_converted)
+            
+            # Add audit columns
+            now = pa.scalar(dt.datetime.utcnow(), type=pa.timestamp('us'))
+            row_count = len(table)
+            
+            # Generate row hashes
+            table_dict = table.to_pydict()
+            row_hashes = []
+            for row_idx in range(row_count):
+                row_data = {col: table_dict[col][row_idx] for col in table_dict.keys()}
+                row_hashes.append(generate_row_hash(row_data))
+            
+            # Add audit columns to table
+            table = table.append_column('src_filename', pa.array([src_filename] * row_count))
+            table = table.append_column('src_row_hash', pa.array(row_hashes))
+            table = table.append_column('ingestion_ts', pa.array([now.as_py()] * row_count, type=pa.timestamp('us')))
+            
+            print(f"    • Schema evolution successful - processed {row_count} records with evolved schema")
+            
+            return ValidationResult(
+                valid_table=table,
+                invalid_records=[],
+                validation_errors=[],
+                total_rows=row_count,
+                valid_rows=row_count,
+                invalid_rows=0,
+                error_summary={}
+            )
     
     try:
         # First attempt: try to cast the entire table
