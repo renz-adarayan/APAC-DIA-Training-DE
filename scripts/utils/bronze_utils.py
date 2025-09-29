@@ -79,6 +79,18 @@ def write_delta(table, base_path, mode='append', partition_by=None, merge_schema
     write_deltalake(str(base_path), data=table, mode=mode, partition_by=partition_by or [])
 
 
+def get_partitioning_strategy(table_name):
+    """Return partitioning strategy for each table type based on Bronze layer requirements"""
+    # Note: Events table stores raw JSON and doesn't have event_dt column in Bronze layer
+    # Partitioning for events will be handled at Silver layer after JSON parsing
+    # Note: Sensors table only has store_id column, month would need to be derived from sensor_ts
+    # Note: Orders tables don't have order_dt column, partitioning by order_dt_local or derived columns at Silver layer
+    if table_name == 'sensors':
+        return ['store_id']  # Only partition by store_id, month partitioning at Silver layer
+    else:
+        return None  # Most Bronze layer tables will be partitioned at Silver layer after data transformation
+
+
 def ingest_file_to_bronze(src_path, table_name, schema, read_func, lake_root, conn, dry_run=False):
     """Enhanced utility function to process file with validation and reject handling"""
     if not src_path.exists():
@@ -171,11 +183,17 @@ def ingest_file_to_bronze(src_path, table_name, schema, read_func, lake_root, co
                               file_size_bytes, processing_duration_ms)
                 return
         
-        print(f"  • Writing {len(tbl)} valid records to Parquet and Delta formats...")
+        # Get partitioning strategy for this table
+        partitioning = get_partitioning_strategy(table_name)
+        partition_info = f" with partitioning by {partitioning}" if partitioning else " without partitioning"
+        
+        print(f"  • Writing {len(tbl)} valid records to Parquet and Delta formats{partition_info}...")
         pq_base = lake_root / 'bronze' / 'parquet' / table_name
         dl_base = lake_root / 'bronze' / 'delta' / table_name
-        write_parquet_partitioned(tbl, pq_base, partitioning=None)
-        write_delta(tbl, dl_base, mode='append')
+        
+        # Write with table-specific partitioning strategy
+        write_parquet_partitioned(tbl, pq_base, partitioning=partitioning)
+        write_delta(tbl, dl_base, mode='append', partition_by=partitioning)
         
         # Calculate processing duration
         processing_duration_ms = int((dt.datetime.utcnow() - start_time).total_seconds() * 1000)
