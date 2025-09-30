@@ -55,6 +55,10 @@ def parse_args():
                     help='Optional YYYY-MM-DD cutoff; partitions older than this are pruned (events/order partitions)')
     ap.add_argument('--collect-partition-stats', action='store_true',
                     help='Collect partition statistics after ingestion (events, orders, sensors)')
+    ap.add_argument('--initial', action='store_true',
+                    help='Initial loading mode: process ALL unprocessed events in weekly batches. Default is incremental mode (1 week per run)')
+    ap.add_argument('--batch-size-days', type=int, default=7,
+                    help='Batch size in days for event processing (default: 7 for weekly batches)')
     return ap.parse_args()
 
 def ensure_dirs(lake_root):
@@ -199,6 +203,122 @@ def update_all_partition_stats(raw_root: pathlib.Path, conn):
     _update_partition_stats_sensors(raw_root, conn)
 
 
+# ---------------------------------------------------------------------------
+# Weekly batch processing helper functions
+# ---------------------------------------------------------------------------
+
+def group_partitions_by_weeks(partitions: List[pathlib.Path], batch_size_days: int = 7) -> List[List[pathlib.Path]]:
+    """Group daily event partitions into weekly batches.
+    
+    Args:
+        partitions: List of partition directories (event_dt=YYYY-MM-DD)
+        batch_size_days: Number of days per batch (default 7 for weekly)
+    
+    Returns:
+        List of batches, where each batch is a list of partition directories
+    """
+    if not partitions:
+        return []
+    
+    # Sort partitions by date (oldest first for processing)
+    partitions_sorted = sorted(partitions, key=lambda x: x.name.split('=')[1])
+    
+    # Group into batches
+    batches = []
+    current_batch = []
+    
+    for partition in partitions_sorted:
+        current_batch.append(partition)
+        
+        # When we reach batch_size_days, start a new batch
+        if len(current_batch) >= batch_size_days:
+            batches.append(current_batch)
+            current_batch = []
+    
+    # Add remaining partitions as the final batch
+    if current_batch:
+        batches.append(current_batch)
+    
+    return batches
+
+def get_unprocessed_partitions(partitions: List[pathlib.Path], conn, dry_run: bool = False) -> List[pathlib.Path]:
+    """Filter partitions to only include those with unprocessed files.
+    
+    Args:
+        partitions: List of partition directories
+        conn: DuckDB connection for manifest checking
+        dry_run: If True, treat all partitions as unprocessed
+    
+    Returns:
+        List of partitions that contain unprocessed JSONL files
+    """
+    if dry_run or not conn:
+        return partitions
+    
+    unprocessed = []
+    
+    for partition_dir in partitions:
+        # Find JSONL files in this partition
+        jsonl_files = list(partition_dir.glob('*.jsonl'))
+        
+        if not jsonl_files:
+            continue
+        
+        # Check if any files in this partition are unprocessed
+        has_unprocessed = False
+        for jsonl_file in jsonl_files:
+            if not already_processed(conn, jsonl_file):
+                has_unprocessed = True
+                break
+        
+        if has_unprocessed:
+            unprocessed.append(partition_dir)
+    
+    return unprocessed
+
+def get_next_unprocessed_batch(partitions: List[pathlib.Path], conn, batch_size_days: int = 7, dry_run: bool = False) -> List[pathlib.Path]:
+    """Get the next unprocessed batch for incremental loading.
+    
+    Args:
+        partitions: List of all partition directories
+        conn: DuckDB connection for manifest checking
+        batch_size_days: Number of days per batch
+        dry_run: If True, treat all partitions as unprocessed
+    
+    Returns:
+        List of partition directories for the next batch to process
+    """
+    unprocessed = get_unprocessed_partitions(partitions, conn, dry_run)
+    
+    if not unprocessed:
+        return []
+    
+    # Get weekly batches
+    batches = group_partitions_by_weeks(unprocessed, batch_size_days)
+    
+    # Return the first batch (earliest dates)
+    return batches[0] if batches else []
+
+def get_all_unprocessed_batches(partitions: List[pathlib.Path], conn, batch_size_days: int = 7, dry_run: bool = False) -> List[List[pathlib.Path]]:
+    """Get all unprocessed batches for initial loading.
+    
+    Args:
+        partitions: List of all partition directories
+        conn: DuckDB connection for manifest checking
+        batch_size_days: Number of days per batch
+        dry_run: If True, treat all partitions as unprocessed
+    
+    Returns:
+        List of batches, where each batch is a list of partition directories
+    """
+    unprocessed = get_unprocessed_partitions(partitions, conn, dry_run)
+    
+    if not unprocessed:
+        return []
+    
+    return group_partitions_by_weeks(unprocessed, batch_size_days)
+
+
 def load_customers(raw_root, lake_root, conn, dry_run=False):
     """Wrapper to load customers via shared process utility."""
     ingest_file_to_bronze(
@@ -258,8 +378,14 @@ def load_exchange_rates(raw_root, lake_root, conn, dry_run=False):
         dry_run=dry_run,
     )
 
-def load_events(raw_root, lake_root, conn, dry_run=False, cutoff_date: Optional[dt.date]=None):
-    """Wrapper to load events JSONL via shared process utility with incremental partition processing."""
+def load_events(raw_root, lake_root, conn, dry_run=False, cutoff_date: Optional[dt.date]=None, initial_mode: bool = False, batch_size_days: int = 7):
+    """Load events JSONL files with weekly batch processing.
+    
+    Args:
+        initial_mode: If True, process ALL unprocessed events in weekly batches. 
+                     If False (default), process next 1 week batch incrementally.
+        batch_size_days: Number of days per batch (default 7 for weekly)
+    """
     events_base = raw_root / 'events'
     
     if not events_base.is_dir():
@@ -288,8 +414,7 @@ def load_events(raw_root, lake_root, conn, dry_run=False, cutoff_date: Optional[
             )
         return
     
-    # Sort partitions by date (newest first for incremental processing) then prune
-    partitions.sort(key=lambda x: x.name, reverse=True)
+    # Apply cutoff date pruning if provided
     if cutoff_date:
         before_len = len(partitions)
         partitions = [p for p in partitions if not _should_prune_partition(p.name, cutoff_date, 'event_dt=')]
@@ -297,32 +422,80 @@ def load_events(raw_root, lake_root, conn, dry_run=False, cutoff_date: Optional[
         if pruned:
             print(f"Pruned {pruned} event partitions older than cutoff {cutoff_date}")
     
-    print(f"Found {len(partitions)} event partitions, processing newest unprocessed first...")
+    print(f"Found {len(partitions)} event partitions...")
     
-    # Process the latest unprocessed partition
-    for partition_dir in partitions:
-        print(f"Checking partition: {partition_dir.name}")
+    # Determine processing mode and get batches
+    if initial_mode:
+        print(f"Initial loading mode: Processing ALL unprocessed events in {batch_size_days}-day batches...")
+        batches = get_all_unprocessed_batches(partitions, conn, batch_size_days, dry_run)
+        
+        if not batches:
+            print("All event partitions have been processed or no unprocessed partitions found")
+            return
+        
+        print(f"Found {len(batches)} unprocessed batches to process...")
+        
+        # Process all batches for initial loading
+        for batch_idx, batch in enumerate(batches, 1):
+            batch_start = batch[0].name.split('=')[1]
+            batch_end = batch[-1].name.split('=')[1]
+            print(f"Processing batch {batch_idx}/{len(batches)}: {batch_start} to {batch_end} ({len(batch)} partitions)")
+            
+            _process_event_batch(batch, lake_root, conn, dry_run)
+            
+            print(f"✅ Completed batch {batch_idx}/{len(batches)}")
+        
+        print(f"✅ Initial loading completed: Processed {len(batches)} batches")
+        
+    else:
+        print(f"Incremental mode: Processing next {batch_size_days}-day batch of unprocessed events...")
+        batch = get_next_unprocessed_batch(partitions, conn, batch_size_days, dry_run)
+        
+        if not batch:
+            print("All event partitions have been processed or no unprocessed partitions found")
+            return
+        
+        batch_start = batch[0].name.split('=')[1]
+        batch_end = batch[-1].name.split('=')[1]
+        print(f"Processing incremental batch: {batch_start} to {batch_end} ({len(batch)} partitions)")
+        
+        _process_event_batch(batch, lake_root, conn, dry_run)
+        
+        print(f"✅ Incremental batch completed")
+
+def _process_event_batch(batch: List[pathlib.Path], lake_root: pathlib.Path, conn, dry_run: bool):
+    """Process all JSONL files in a batch of event partitions.
+    
+    Args:
+        batch: List of partition directories to process
+        lake_root: Lake root directory
+        conn: DuckDB connection
+        dry_run: If True, only validate without writing
+    """
+    total_files_processed = 0
+    
+    for partition_dir in batch:
+        print(f"  Processing partition: {partition_dir.name}")
         
         # Find JSONL files in this partition
         jsonl_files = list(partition_dir.glob('*.jsonl'))
         
         if not jsonl_files:
-            print(f"  No JSONL files found in partition {partition_dir.name}")
+            print(f"    No JSONL files found in partition {partition_dir.name}")
             continue
         
-        print(f"  Found {len(jsonl_files)} JSONL file(s) in partition {partition_dir.name}")
+        print(f"    Found {len(jsonl_files)} JSONL file(s)")
         
-        # Process the first unprocessed JSONL file in this partition
+        # Process all JSONL files in this partition
         for jsonl_file in jsonl_files:
-            # Check if this file has already been processed (for incremental loading)
+            # Check if this file has already been processed (idempotency)
             if not dry_run and conn:
-                # already_processed imported at module top
                 if already_processed(conn, jsonl_file):
-                    print(f"  JSONL file already processed: {jsonl_file.name}")
+                    print(f"    ⏭️  JSONL file already processed: {jsonl_file.name}")
                     continue
             
-            # Process this partition's JSONL file
-            print(f"  Processing JSONL file: {jsonl_file.name}")
+            # Process this JSONL file
+            print(f"    📥 Processing JSONL file: {jsonl_file.name}")
             ingest_file_to_bronze(
                 src_path=jsonl_file,
                 table_name='events',
@@ -332,16 +505,9 @@ def load_events(raw_root, lake_root, conn, dry_run=False, cutoff_date: Optional[
                 conn=conn,
                 dry_run=dry_run,
             )
-            
-            # For incremental processing, stop after processing one file
-            # This prevents loading all 2M events at once and enables batched processing
-            print(f"  Completed processing partition: {partition_dir.name}")
-            return
-        
-        # If we reach here, all files in this partition were already processed
-        print(f"  All files in partition {partition_dir.name} already processed")
+            total_files_processed += 1
     
-    print("All event partitions have been processed or no unprocessed partitions found")
+    print(f"    ✅ Batch processing completed: {total_files_processed} files processed")
 
 def load_shipments(raw_root, lake_root, conn, dry_run=False):
     """Wrapper to load shipments Parquet via shared process utility."""
@@ -733,7 +899,8 @@ def main():
     load_stores(raw_root, lake_root, conn, args.dry_run)
     load_suppliers(raw_root, lake_root, conn, args.dry_run)
     load_exchange_rates(raw_root, lake_root, conn, args.dry_run)
-    load_events(raw_root, lake_root, conn, args.dry_run, cutoff_date=cutoff_date)
+    load_events(raw_root, lake_root, conn, args.dry_run, cutoff_date=cutoff_date, 
+                initial_mode=args.initial, batch_size_days=args.batch_size_days)
     load_sensors(raw_root, lake_root, conn, args.dry_run)
     load_orders_header(raw_root, lake_root, conn, args.dry_run, cutoff_date=cutoff_date)
     load_orders_lines(raw_root, lake_root, conn, args.dry_run, cutoff_date=cutoff_date)
