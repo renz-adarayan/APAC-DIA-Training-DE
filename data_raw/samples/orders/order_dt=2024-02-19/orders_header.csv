@@ -1,2 +1,0 @@
-order_id,order_ts,order_dt_local,customer_id,store_id,channel,payment_method,coupon_code,shipping_fee,currency
-50,2024-02-19T15:39:04.246174,2024-02-19,657250,914761,pos,buy_now_pay_later,,0.00,AUD

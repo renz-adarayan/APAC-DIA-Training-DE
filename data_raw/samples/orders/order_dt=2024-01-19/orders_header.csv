@@ -1,2 +1,0 @@
-order_id,order_ts,order_dt_local,customer_id,store_id,channel,payment_method,coupon_code,shipping_fee,currency
-19,2024-01-19T17:31:25.255836,2024-01-19,929183,753242,pos,cash,,0.00,USD

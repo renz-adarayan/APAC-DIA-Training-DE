@@ -1,2 +1,0 @@
-order_id,order_ts,order_dt_local,customer_id,store_id,channel,payment_method,coupon_code,shipping_fee,currency
-43,2024-02-12T13:32:52.001206,2024-02-12,338979,810077,web,credit_card,,20.12,AUD

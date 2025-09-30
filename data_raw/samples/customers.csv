@@ -1,5 +1,0 @@
-customer_id,natural_key,first_name,last_name,email,phone,address_line1,address_line2,city,state_region,postcode,country_code,latitude,longitude,birth_date,join_ts,is_vip,gdpr_consent
-1,CUST-XAJI0Y6D,Hannah,Graves,dorothypruitt@example.net,0404-261-762,814 Diana Port,,Nelsonchester,WA,2610,AU,-43.702028,120.745519,2000-05-03,2024-11-04T00:57:58,false,true
-2,CUST-QK51FPKH,John,Jenkins,brandon63@example.org,02.3590.6032,23 Earl Tollway,04/,Valerieton,WA,2978,AU,-42.977897,127.197092,1987-03-17,2024-06-25T21:58:51,false,true
-3,CUST-7CKW5NGC,Rodney,Parker,joewarren@example.org,0484-098-746,Suite 035 160 Trevino Line,,Shieldshaven,NT,2622,AU,-36.269317,151.408861,1975-11-20,2024-02-21T13:50:23,false,true
-4,CUST-HJ7XVG0F,Brittany,Morris,pachecobeth@example.org,(07) 2679 9009,Level 3 52 Lopez Mew,,Lake Davidfurt,NSW,2068,AU,-34.104766,137.599990,2004-12-19,2024-04-22T11:48:24,false,true

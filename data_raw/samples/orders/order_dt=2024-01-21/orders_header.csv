@@ -1,2 +1,0 @@
-order_id,order_ts,order_dt_local,customer_id,store_id,channel,payment_method,coupon_code,shipping_fee,currency
-21,2024-01-21T20:28:16.788295,2024-01-21,940795,779781,pos,paypal,,0.00,AUD
