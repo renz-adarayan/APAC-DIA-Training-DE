@@ -79,6 +79,165 @@ def write_delta(table, base_path, mode='append', partition_by=None, merge_schema
     write_deltalake(str(base_path), data=table, mode=mode, partition_by=partition_by or [])
 
 
+def upsert_returns_delta(new_data_table, delta_path, primary_key='return_id'):
+    """
+    Implement UPSERT logic for returns table with schema evolution support.
+    
+    Args:
+        new_data_table: PyArrow table containing new/updated return records
+        delta_path: Path to Delta table
+        primary_key: Primary key field for merge logic (default: 'return_id')
+    
+    Returns:
+        tuple: (rows_inserted, rows_updated, rows_deleted)
+    """
+    try:
+        from deltalake import DeltaTable
+        from deltalake.writer import write_deltalake
+    except ImportError:
+        raise ImportError("deltalake package required for UPSERT operations")
+    
+    import pyarrow.compute as pc
+    import pathlib
+    
+    delta_path = pathlib.Path(delta_path)
+    
+    # Check if Delta table exists
+    if not delta_path.exists() or not any(delta_path.iterdir()):
+        print(f"  • Delta table does not exist, creating new table with initial data")
+        write_deltalake(
+            str(delta_path),
+            new_data_table,
+            mode='overwrite'
+        )
+        return len(new_data_table), 0, 0
+    
+    # Read existing Delta table
+    print(f"  • Reading existing Delta table for UPSERT operation")
+    dt = DeltaTable(str(delta_path))
+    existing_table = dt.to_pyarrow_table()
+    
+    print(f"    Existing records: {len(existing_table)}")
+    print(f"    New/updated records: {len(new_data_table)}")
+    
+    # Handle schema evolution - align schemas between existing and new data
+    existing_columns = set(existing_table.column_names)
+    new_columns = set(new_data_table.column_names)
+    
+    all_columns = existing_columns.union(new_columns)
+    
+    if existing_columns != new_columns:
+        print(f"  • Schema evolution detected:")
+        print(f"    Existing columns: {sorted(existing_columns)}")
+        print(f"    New columns: {sorted(new_columns)}")
+        
+        # Add missing columns to existing table
+        missing_in_existing = new_columns - existing_columns
+        if missing_in_existing:
+            print(f"    Adding missing columns to existing data: {sorted(missing_in_existing)}")
+            for col_name in missing_in_existing:
+                # Get column type from new data
+                col_type = new_data_table.schema.field(col_name).type
+                # Add null column to existing table
+                null_array = pa.nulls(len(existing_table), type=col_type)
+                existing_table = existing_table.append_column(col_name, null_array)
+        
+        # Add missing columns to new table
+        missing_in_new = existing_columns - new_columns
+        if missing_in_new:
+            print(f"    Adding missing columns to new data: {sorted(missing_in_new)}")
+            for col_name in missing_in_new:
+                # Get column type from existing data
+                col_type = existing_table.schema.field(col_name).type
+                # Add null column to new table
+                null_array = pa.nulls(len(new_data_table), type=col_type)
+                new_data_table = new_data_table.append_column(col_name, null_array)
+    
+    # Ensure column order consistency
+    final_column_order = sorted(all_columns)
+    existing_table = existing_table.select(final_column_order)
+    new_data_table = new_data_table.select(final_column_order)
+    
+    # Extract primary keys from new data for conflict detection
+    if primary_key not in new_data_table.column_names:
+        raise ValueError(f"Primary key '{primary_key}' not found in new data columns: {new_data_table.column_names}")
+    
+    new_primary_keys = new_data_table.column(primary_key).to_pylist()
+    print(f"  • Processing UPSERT for {len(new_primary_keys)} records with primary keys: {new_primary_keys[:5]}{'...' if len(new_primary_keys) > 5 else ''}")
+    
+    # Detect soft deletes (records with special tombstone markers)
+    # Look for records with qty=0 and reason='DELETED' as soft delete markers
+    tombstone_condition = None
+    rows_deleted = 0
+    
+    if 'qty' in new_data_table.column_names and 'reason' in new_data_table.column_names:
+        qty_col = new_data_table.column('qty')
+        reason_col = new_data_table.column('reason')
+        
+        # Find tombstone records (qty=0 AND reason='DELETED')
+        tombstone_mask = pc.and_(
+            pc.equal(qty_col, 0),
+            pc.equal(reason_col, pa.scalar('DELETED'))
+        )
+        
+        tombstone_indices = pc.list_indices(tombstone_mask, pa.scalar(True))
+        if len(tombstone_indices) > 0:
+            tombstone_primary_keys = pc.take(new_data_table.column(primary_key), tombstone_indices).to_pylist()
+            print(f"  • Found {len(tombstone_primary_keys)} soft delete records (tombstones): {tombstone_primary_keys}")
+            rows_deleted = len(tombstone_primary_keys)
+            
+            # Remove tombstone records from existing data
+            existing_primary_keys = existing_table.column(primary_key)
+            keep_mask = pc.invert(pc.is_in(existing_primary_keys, pa.array(tombstone_primary_keys)))
+            existing_table = pc.filter(existing_table, keep_mask)
+            
+            # Remove tombstone records from new data (they're processed as deletes)
+            keep_new_mask = pc.invert(tombstone_mask)
+            new_data_table = pc.filter(new_data_table, keep_new_mask)
+            new_primary_keys = [pk for pk in new_primary_keys if pk not in tombstone_primary_keys]
+            print(f"  • After tombstone processing: {len(new_data_table)} records to insert/update")
+    
+    # Identify updates vs inserts
+    existing_primary_keys = existing_table.column(primary_key)
+    update_mask = pc.is_in(new_data_table.column(primary_key), existing_primary_keys)
+    
+    # Split new data into updates and inserts
+    update_records = pc.filter(new_data_table, update_mask)
+    insert_records = pc.filter(new_data_table, pc.invert(update_mask))
+    
+    rows_updated = len(update_records)
+    rows_inserted = len(insert_records)
+    
+    print(f"  • UPSERT breakdown: {rows_inserted} inserts, {rows_updated} updates, {rows_deleted} deletes")
+    
+    # Perform the merge operation
+    if rows_updated > 0:
+        # Remove existing records that will be updated
+        update_primary_keys = update_records.column(primary_key)
+        keep_mask = pc.invert(pc.is_in(existing_primary_keys, update_primary_keys))
+        existing_table = pc.filter(existing_table, keep_mask)
+    
+    # Combine all data: existing (minus updated/deleted) + all new records
+    if len(existing_table) > 0 and len(new_data_table) > 0:
+        merged_table = pa.concat_tables([existing_table, new_data_table])
+    elif len(new_data_table) > 0:
+        merged_table = new_data_table
+    else:
+        merged_table = existing_table
+    
+    print(f"  • Final merged table: {len(merged_table)} total records")
+    
+    # Write the merged data back to Delta table
+    write_deltalake(
+        str(delta_path),
+        merged_table,
+        mode='overwrite'
+    )
+    
+    print(f"  • UPSERT completed: {rows_inserted} inserted, {rows_updated} updated, {rows_deleted} deleted")
+    return rows_inserted, rows_updated, rows_deleted
+
+
 def get_partitioning_strategy(table_name):
     """Return partitioning strategy for each table type based on Bronze layer requirements"""
     # Note: Events table stores raw JSON and doesn't have event_dt column in Bronze layer

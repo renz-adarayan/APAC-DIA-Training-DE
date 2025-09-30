@@ -34,12 +34,19 @@ try:
         read_jsonl_with_schema,
         read_parquet_with_schema,
         read_delta_with_schema,
+        calculate_file_hash,
+        mark_processed,
+        already_processed,
+        write_parquet_partitioned,
     )
 except ModuleNotFoundError:
     util_path = pathlib.Path(__file__).resolve().parent / 'utils'
     if str(util_path) not in sys.path:
         sys.path.insert(0, str(util_path))
-    from bronze_utils import ingest_file_to_bronze, read_csv_with_schema, read_xlsx_with_schema, read_jsonl_with_schema, read_parquet_with_schema, read_delta_with_schema
+    from bronze_utils import ingest_file_to_bronze, read_csv_with_schema, read_xlsx_with_schema, read_jsonl_with_schema, read_parquet_with_schema, read_delta_with_schema, calculate_file_hash, mark_processed, already_processed, write_parquet_partitioned
+
+# Import PyArrow for data processing
+import pyarrow as pa
 
 def parse_args():
     ap = argparse.ArgumentParser()
@@ -352,16 +359,134 @@ def load_shipments(raw_root, lake_root, conn, dry_run=False):
     )
 
 def load_returns(raw_root, lake_root, conn, dry_run=False):
-    """Wrapper to load returns Delta table via shared process utility."""
-    ingest_file_to_bronze(
-        src_path=raw_root / 'returns_delta',
-        table_name='returns',
-        schema=returns_day1_schema,
-        read_func=read_delta_with_schema,
-        lake_root=lake_root,
-        conn=conn,
-        dry_run=dry_run,
-    )
+    """Load returns Delta table with UPSERT functionality for proper merge operations."""
+    src_path = raw_root / 'returns_delta'
+    
+    if not src_path.exists():
+        print(f"Returns file not found: {src_path}")
+        return
+    if not dry_run and already_processed(conn, src_path):
+        print(f"Returns file already processed: {src_path}")
+        return
+    
+    print(f"Processing returns file: {src_path}")
+    
+    # Get file metadata
+    if src_path.is_file():
+        file_size_bytes = src_path.stat().st_size
+    elif src_path.is_dir():
+        # Calculate total size of all files in directory
+        file_size_bytes = sum(f.stat().st_size for f in src_path.rglob('*') if f.is_file())
+    else:
+        file_size_bytes = 0
+    
+    if dry_run:
+        print(f"DRY RUN: Would process {src_path} ({file_size_bytes} bytes)")
+        return
+    
+    # Track processing time
+    start_time = dt.datetime.utcnow()
+    reject_count = 0
+    error_message = None
+    status = 'SUCCESS'
+    file_hash = None
+    
+    try:
+        # Calculate file hash for integrity checking
+        print(f"  • Calculating file hash for integrity...")
+        file_hash = calculate_file_hash(src_path)
+        
+        # Load raw returns data
+        print(f"  • Loading raw returns data...")
+        raw_table = read_delta_with_schema(src_path, returns_day1_schema, validate=False)
+        
+        # Enhanced validation with detailed error capture
+        print(f"  • Performing enhanced schema validation...")
+        src_filename = src_path.name
+        
+        # Import validation utilities
+        try:
+            from scripts.utils.validation_utils import validate_table_with_errors, write_rejects_to_lake, write_rejects_summary
+        except ImportError:
+            # Fallback to basic validation if validation_utils not available
+            print(f"  • Validation utilities not available, using basic validation...")
+            tbl = raw_table
+            if 'src_filename' not in tbl.column_names:
+                # Add basic audit columns
+                now = pa.scalar(dt.datetime.utcnow(), type=pa.timestamp('us'))
+                tbl = tbl.append_column('src_filename', pa.array([src_filename]*len(tbl)))
+                tbl = tbl.append_column('src_row_hash', pa.array(['basic_hash']*len(tbl)))  # Placeholder
+                tbl = tbl.append_column('ingestion_ts', pa.array([now.as_py()]*len(tbl), type=pa.timestamp('us')))
+            
+            validation_result = None
+        else:
+            # Use enhanced validation
+            validation_result = validate_table_with_errors(raw_table, returns_day1_schema, src_filename)
+            
+            # Handle validation results
+            if validation_result.invalid_rows > 0:
+                print(f"  • Found {validation_result.invalid_rows} invalid rows out of {validation_result.total_rows}")
+                print(f"  • Success rate: {validation_result.success_rate:.1f}%")
+                print(f"  • Error breakdown: {validation_result.error_summary}")
+                
+                # Write rejects to lake/_rejects/
+                reject_count = write_rejects_to_lake(
+                    validation_result.invalid_records, 
+                    'returns', 
+                    lake_root, 
+                    start_time
+                )
+                
+                # Write validation summary
+                write_rejects_summary(validation_result, 'returns', lake_root, start_time)
+            
+            # Use the validated table (with audit columns already added)
+            tbl = validation_result.valid_table
+            
+            if tbl is None or len(tbl) == 0:
+                print(f"  • No valid records to process after validation")
+                # Mark as processed with zero valid rows
+                processing_duration_ms = int((dt.datetime.utcnow() - start_time).total_seconds() * 1000)
+                mark_processed(conn, src_path, 0, reject_count, file_hash, 'SUCCESS',
+                              f"All {validation_result.total_rows} rows rejected during validation", 
+                              file_size_bytes, processing_duration_ms)
+                return
+        
+        print(f"  • Writing {len(tbl)} valid records using UPSERT logic...")
+        pq_base = lake_root / 'bronze' / 'parquet' / 'returns'
+        dl_base = lake_root / 'bronze' / 'delta' / 'returns'
+        
+        # Write to Parquet (standard approach)
+        write_parquet_partitioned(tbl, pq_base, partitioning=None)
+        
+        # Use UPSERT logic for Delta Lake
+        from scripts.utils.bronze_utils import upsert_returns_delta
+        rows_inserted, rows_updated, rows_deleted = upsert_returns_delta(tbl, dl_base, primary_key='return_id')
+        
+        # Calculate processing duration
+        processing_duration_ms = int((dt.datetime.utcnow() - start_time).total_seconds() * 1000)
+        
+        # Mark as successfully processed with enhanced metadata
+        mark_processed(conn, src_path, len(tbl), reject_count, file_hash, status,
+                      error_message, file_size_bytes, processing_duration_ms)
+        
+        print(f"Successfully processed returns: {len(tbl)} valid rows ({rows_inserted} inserted, {rows_updated} updated, {rows_deleted} deleted), {reject_count} rejects in {processing_duration_ms}ms")
+        print(f"   File hash: {file_hash[:16]}... | Size: {file_size_bytes} bytes")
+        if validation_result and validation_result.invalid_rows > 0:
+            print(f"   Data quality: {validation_result.success_rate:.1f}% success rate")
+        
+    except Exception as e:
+        # Handle processing failure
+        processing_duration_ms = int((dt.datetime.utcnow() - start_time).total_seconds() * 1000)
+        status = 'FAILED'
+        error_message = str(e)
+        
+        # Mark as failed in manifest with error details
+        mark_processed(conn, src_path, 0, reject_count, file_hash, status,
+                      error_message, file_size_bytes, processing_duration_ms)
+        
+        print(f"Failed to process returns file: {error_message}")
+        raise
 
 def load_sensors(raw_root, lake_root, conn, dry_run=False):  # sensors partition pruning by date not implemented yet
     """Wrapper to load sensors CSV files with incremental partition processing."""
