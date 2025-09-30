@@ -25,6 +25,29 @@ def generate_customers_data(schema: pa.Schema, scale: float, output_path: Path) 
     fake = Faker('en_AU')
     num_customers = apply_scale_to_targets(TARGET_ROWS['customers'], scale)
     column_names = get_column_names(schema)
+
+    # Helper to generate deliberately malformed email addresses for data quality tests
+    def _malformed_email() -> str:
+        base_local = fake.first_name().lower()
+        base_domain = fake.domain_name().split('/')[-1].replace('www.', '')
+        patterns = [
+            lambda: base_local,                              # missing @ and domain
+            lambda: f"{base_local}@",                        # missing domain part
+            lambda: f"@{base_domain}",                       # missing local part
+            lambda: f"{base_local}{base_domain}",            # missing @
+            lambda: f"{base_local}@@{base_domain}",          # double @
+            lambda: f"{base_local}@{base_domain}.",          # trailing dot
+            lambda: f".{base_local}@{base_domain}",          # leading dot in local
+            lambda: f"{base_local} @ {base_domain}",         # spaces around @
+            lambda: f"{base_local}@{base_domain}..com",      # double dot in TLD
+            lambda: f"{base_local}!@{base_domain}",          # illegal char !
+            lambda: f"{base_local}@{base_domain.split('.')[0]}",  # missing TLD
+            lambda: ''                                       # empty string
+        ]
+        try:
+            return random.choice(patterns)()
+        except Exception:
+            return 'invalid'  # fallback
     
     # Track natural keys for duplicate injection
     generated_natural_keys: List[str] = []
@@ -69,8 +92,8 @@ def generate_customers_data(schema: pa.Schema, scale: float, output_path: Path) 
                     nk = f"CUST-{random_suffix}"
                     generated_natural_keys.append(nk)
             
-            # Inject anomalies: 1% malformed emails
-            email: str = fake.email() if random.random() > 0.01 else 'bad_email'
+            # Inject anomalies: 1% malformed emails (varied patterns instead of single token)
+            email: str = fake.email() if random.random() > 0.01 else _malformed_email()
             
             # Australian coordinates (more accurate bounds)
             lat: float = -44 + random.random() * 10  # -44 to -34 (covers mainland AU)
