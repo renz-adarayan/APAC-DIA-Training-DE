@@ -25,25 +25,23 @@ except ModuleNotFoundError as e:
         f"sys.path (first 5 entries): {sys.path[:5]} | Project root: {PROJECT_ROOT}"
     ) from e
 
-# Import bronze utility functions 
-try:
-    from scripts.utils.bronze_utils import (
-        ingest_file_to_bronze,
-        read_csv_with_schema,
-        read_xlsx_with_schema,
-        read_jsonl_with_schema,
-        read_parquet_with_schema,
-        read_delta_with_schema,
-        calculate_file_hash,
-        mark_processed,
-        already_processed,
-        write_parquet_partitioned,
-    )
-except ModuleNotFoundError:
-    util_path = pathlib.Path(__file__).resolve().parent / 'utils'
-    if str(util_path) not in sys.path:
-        sys.path.insert(0, str(util_path))
-    from scripts.utils.bronze_utils import ingest_file_to_bronze, read_csv_with_schema, read_xlsx_with_schema, read_jsonl_with_schema, read_parquet_with_schema, read_delta_with_schema, calculate_file_hash, mark_processed, already_processed, write_parquet_partitioned
+# Import bronze utilities (refactored into bronze_io + bronze_ingestion).
+from scripts.utils.bronze_io import (
+    read_csv_with_schema,
+    read_xlsx_with_schema,
+    read_jsonl_with_schema,
+    read_parquet_with_schema,
+    read_delta_with_schema,
+    calculate_file_hash,
+    write_parquet_partitioned,
+)
+from scripts.utils.bronze_ingestion import (
+    ingest_file_to_bronze,
+    mark_processed,
+    already_processed,
+    upsert_returns_delta,
+)
+
 # Import PyArrow for data processing
 import pyarrow as pa
 
@@ -318,7 +316,7 @@ def load_events(raw_root, lake_root, conn, dry_run=False, cutoff_date: Optional[
         for jsonl_file in jsonl_files:
             # Check if this file has already been processed (for incremental loading)
             if not dry_run and conn:
-                from scripts.utils.bronze_utils import already_processed
+                # already_processed imported at module top
                 if already_processed(conn, jsonl_file):
                     print(f"  JSONL file already processed: {jsonl_file.name}")
                     continue
@@ -459,7 +457,7 @@ def load_returns(raw_root, lake_root, conn, dry_run=False):
         write_parquet_partitioned(tbl, pq_base, partitioning=None)
         
         # Use UPSERT logic for Delta Lake
-        from scripts.utils.bronze_utils import upsert_returns_delta
+    # upsert_returns_delta already imported above
         rows_inserted, rows_updated, rows_deleted = upsert_returns_delta(tbl, dl_base, primary_key='return_id')
         
         # Calculate processing duration
@@ -542,7 +540,7 @@ def load_sensors(raw_root, lake_root, conn, dry_run=False):  # sensors partition
             for csv_file in csv_files:
                 # Check if this file has already been processed (for incremental loading)
                 if not dry_run and conn:
-                    from scripts.utils.bronze_utils import already_processed
+                    # already_processed imported at module top
                     if already_processed(conn, csv_file):
                         print(f"    CSV file already processed: {csv_file.name}")
                         continue
@@ -614,7 +612,7 @@ def load_orders_header(raw_root, lake_root, conn, dry_run=False, cutoff_date: Op
         
         # Check if this file has already been processed (for incremental loading)
         if not dry_run and conn:
-            from scripts.utils.bronze_utils import already_processed
+            # already_processed imported at module top
             if already_processed(conn, header_file):
                 print(f"Orders header file already processed: {header_file.name}")
                 continue
@@ -680,7 +678,7 @@ def load_orders_lines(raw_root, lake_root, conn, dry_run=False, cutoff_date: Opt
         
         # Check if this file has already been processed (for incremental loading)
         if not dry_run and conn:
-            from scripts.utils.bronze_utils import already_processed
+            # already_processed imported at module top
             if already_processed(conn, lines_file):
                 print(f"  Orders lines file already processed: {lines_file.name}")
                 continue
