@@ -43,8 +43,7 @@ except ModuleNotFoundError:
     util_path = pathlib.Path(__file__).resolve().parent / 'utils'
     if str(util_path) not in sys.path:
         sys.path.insert(0, str(util_path))
-    from bronze_utils import ingest_file_to_bronze, read_csv_with_schema, read_xlsx_with_schema, read_jsonl_with_schema, read_parquet_with_schema, read_delta_with_schema, calculate_file_hash, mark_processed, already_processed, write_parquet_partitioned
-
+    from scripts.utils.bronze_utils import ingest_file_to_bronze, read_csv_with_schema, read_xlsx_with_schema, read_jsonl_with_schema, read_parquet_with_schema, read_delta_with_schema, calculate_file_hash, mark_processed, already_processed, write_parquet_partitioned
 # Import PyArrow for data processing
 import pyarrow as pa
 
