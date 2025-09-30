@@ -2,6 +2,7 @@
 import random
 import string
 import csv
+import math
 from datetime import datetime, timedelta, date
 from pathlib import Path
 from typing import List
@@ -27,25 +28,46 @@ def generate_customers_data(schema: pa.Schema, scale: float, output_path: Path) 
     
     # Track natural keys for duplicate injection
     generated_natural_keys: List[str] = []
+    duplicate_injected_keys: List[str] = []  # records each duplicate occurrence
     
-    # Calculate number of duplicates to inject (0.2% exact rate)
-    num_duplicates: int = max(1, int(num_customers * 0.002))
+    # Calculate number of duplicates to inject (0.2% exact rate) - always round up
+    num_duplicates: int = max(1, math.ceil(num_customers * 0.002))
+    dupes_created: int = 0  # how many duplicate rows emitted so far
+    duplicated_keys = set()  # track which natural keys already received one duplicate
     
     with output_path.open('w', encoding='utf-8', newline='') as f:
         writer = csv.writer(f, quoting=csv.QUOTE_MINIMAL)
         writer.writerow(column_names)
         
         for i in range(1, num_customers + 1):
-            # Natural key generation with duplicate injection
-            if i <= num_duplicates and len(generated_natural_keys) > 0:
-                # Inject duplicate - reuse existing key
-                nk: str = random.choice(generated_natural_keys)
-            else:
-                # Generate new natural key following pattern CUST-[A-Z0-9]{8}
+            if i == 1:
+                # Always start with a unique key.
                 characters: str = string.ascii_uppercase + string.digits
                 random_suffix: str = ''.join(random.choices(characters, k=8))
                 nk = f"CUST-{random_suffix}"
                 generated_natural_keys.append(nk)
+            else:
+                duplicates_remaining = num_duplicates - dupes_created
+                rows_remaining = num_customers - i + 1
+                # We can inject if we still have duplicate quota AND there exists a key not yet duplicated.
+                available_for_dup = [k for k in generated_natural_keys if k not in duplicated_keys]
+                can_inject = duplicates_remaining > 0 and len(available_for_dup) > 0
+                # Must inject if we are running out of rows (ensure quota fulfillment)
+                must_inject = can_inject and rows_remaining == duplicates_remaining
+                # Probabilistic early injection to spread duplicates; adjust probability if needed.
+                should_inject = can_inject and (must_inject or random.random() < 0.35)
+
+                if should_inject:
+                    nk = random.choice(available_for_dup)
+                    duplicate_injected_keys.append(nk)
+                    duplicated_keys.add(nk)
+                    dupes_created += 1
+                else:
+                    # Generate a new unique key.
+                    characters: str = string.ascii_uppercase + string.digits
+                    random_suffix: str = ''.join(random.choices(characters, k=8))
+                    nk = f"CUST-{random_suffix}"
+                    generated_natural_keys.append(nk)
             
             # Inject anomalies: 1% malformed emails
             email: str = fake.email() if random.random() > 0.01 else 'bad_email'
@@ -108,4 +130,14 @@ def generate_customers_data(schema: pa.Schema, scale: float, output_path: Path) 
                 str(gdpr_consent).lower()       # gdpr_consent
             ])
     
+    # Post-generation summary
+    if duplicate_injected_keys:
+        unique_dupes = sorted(set(duplicate_injected_keys))
+        print(
+            f"Summary: Injected {len(duplicate_injected_keys)} duplicate occurrences across "
+            f"{len(unique_dupes)} unique natural_keys: {', '.join(unique_dupes)}"
+        )
+    else:
+        print("Summary: No duplicate natural_keys were injected (unexpected).")
+
     return num_customers

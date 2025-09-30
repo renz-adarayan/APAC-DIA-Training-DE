@@ -2,6 +2,7 @@
 import random
 import string
 import csv
+import math
 from datetime import date, timedelta
 from pathlib import Path
 from typing import List
@@ -30,9 +31,12 @@ def generate_stores_data(schema: pa.Schema, scale: float, output_path: Path) -> 
     
     # Track store codes for duplicate injection
     generated_store_codes: List[str] = []
+    duplicate_injected_keys: List[str] = []  # records each duplicate occurrence
     
-    # Calculate number of duplicates to inject (0.2% rate similar to customers)
-    num_duplicates: int = max(1, int(num_stores * 0.002))
+    # Calculate number of duplicates to inject (0.2% exact rate) - always round up
+    num_duplicates: int = max(1, math.ceil(num_stores * 0.002))
+    dupes_created: int = 0  # how many duplicate rows emitted so far
+    duplicated_keys = set()  # track which store codes already received one duplicate
     
     # Define pools
     channels = ['web', 'pos']
@@ -43,15 +47,32 @@ def generate_stores_data(schema: pa.Schema, scale: float, output_path: Path) -> 
         writer.writerow(column_names)
         
         for sid in range(1, num_stores + 1):
-            # Store code generation with duplicate injection
-            if sid <= num_duplicates and len(generated_store_codes) > 0:
-                # Inject duplicate - reuse existing code
-                store_code: str = random.choice(generated_store_codes)
-            else:
-                # Generate new store code following pattern STR-[A-Z0-9]{5}
+            if sid == 1:
+                # Always start with a unique key.
                 random_suffix: str = ''.join(random.choices(characters, k=5))
                 store_code = f"STR-{random_suffix}"
                 generated_store_codes.append(store_code)
+            else:
+                duplicates_remaining = num_duplicates - dupes_created
+                rows_remaining = num_stores - sid + 1
+                # We can inject if we still have duplicate quota AND there exists a key not yet duplicated.
+                available_for_dup = [k for k in generated_store_codes if k not in duplicated_keys]
+                can_inject = duplicates_remaining > 0 and len(available_for_dup) > 0
+                # Must inject if we are running out of rows (ensure quota fulfillment)
+                must_inject = can_inject and rows_remaining == duplicates_remaining
+                # Probabilistic early injection to spread duplicates; adjust probability if needed.
+                should_inject = can_inject and (must_inject or random.random() < 0.35)
+
+                if should_inject:
+                    store_code = random.choice(available_for_dup)
+                    duplicate_injected_keys.append(store_code)
+                    duplicated_keys.add(store_code)
+                    dupes_created += 1
+                else:
+                    # Generate a new unique store code.
+                    random_suffix: str = ''.join(random.choices(characters, k=5))
+                    store_code = f"STR-{random_suffix}"
+                    generated_store_codes.append(store_code)
             
             # Generate realistic store name using Faker
             name: str = f"{fake.company()} {random.choice(['Store', 'Outlet', 'Centre', 'Shop'])}"
@@ -95,4 +116,14 @@ def generate_stores_data(schema: pa.Schema, scale: float, output_path: Path) -> 
                 close_dt_str               # close_dt
             ])
     
+    # Post-generation summary
+    if duplicate_injected_keys:
+        unique_dupes = sorted(set(duplicate_injected_keys))
+        print(
+            f"Summary: Injected {len(duplicate_injected_keys)} duplicate occurrences across "
+            f"{len(unique_dupes)} unique store_codes: {', '.join(unique_dupes)}"
+        )
+    else:
+        print("Summary: No duplicate store_codes were injected (unexpected).")
+
     return num_stores

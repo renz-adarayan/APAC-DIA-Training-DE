@@ -1,5 +1,6 @@
 """Orders header data generator module."""
 import csv
+import math
 import random
 from datetime import date, timedelta
 from decimal import Decimal
@@ -77,8 +78,16 @@ def generate_orders_header_data(schema: pa.Schema, scale: float, output_path: Pa
     valid_customer_ids = list(range(1, num_customers + 1))
     valid_store_ids = list(range(1, num_stores + 1))
     
+    # Track order IDs for duplicate injection (0.05% exact rate)
+    generated_order_ids: List[int] = []
+    duplicate_injected_keys: List[int] = []  # records each duplicate occurrence
+    
+    # Calculate number of duplicates to inject (0.05% exact rate) - always round up
+    num_duplicates: int = max(1, math.ceil(num_orders * 0.0005))
+    dupes_created: int = 0  # how many duplicate rows emitted so far
+    duplicated_keys = set()  # track which order IDs already received one duplicate
+    
     order_id = 1
-    duplicate_order_ids = set()  # Track duplicates for 0.05% anomaly
     total_orders_generated = 0
     
     for order_date, daily_orders in orders_per_date.items():
@@ -106,12 +115,31 @@ def generate_orders_header_data(schema: pa.Schema, scale: float, output_path: Pa
                 # Generate order timestamp with business hours weighting
                 order_ts = generate_business_hours_timestamp(order_date)
                 
-                # 0.05% duplicate order_ids across partitions (anomaly)
-                current_order_id = order_id
-                if random.random() < 0.0005 and duplicate_order_ids:
-                    current_order_id = random.choice(list(duplicate_order_ids))
+                # Sophisticated duplicate injection logic for order_ids
+                if order_id == 1:
+                    # Always start with a unique key
+                    current_order_id = order_id
+                    generated_order_ids.append(order_id)
                 else:
-                    duplicate_order_ids.add(order_id)
+                    duplicates_remaining = num_duplicates - dupes_created
+                    orders_remaining = num_orders - order_id + 1
+                    # We can inject if we still have duplicate quota AND there exists a key not yet duplicated
+                    available_for_dup = [k for k in generated_order_ids if k not in duplicated_keys]
+                    can_inject = duplicates_remaining > 0 and len(available_for_dup) > 0
+                    # Must inject if we are running out of orders (ensure quota fulfillment)
+                    must_inject = can_inject and orders_remaining == duplicates_remaining
+                    # Probabilistic early injection to spread duplicates; adjust probability if needed
+                    should_inject = can_inject and (must_inject or random.random() < 0.35)
+
+                    if should_inject:
+                        current_order_id = random.choice(available_for_dup)
+                        duplicate_injected_keys.append(current_order_id)
+                        duplicated_keys.add(current_order_id)
+                        dupes_created += 1
+                    else:
+                        # Generate a new unique order ID
+                        current_order_id = order_id
+                        generated_order_ids.append(order_id)
                 
                 # Channel selection affects other attributes
                 channel = random.choices(CHANNELS, weights=CHANNEL_WEIGHTS)[0]
@@ -154,4 +182,14 @@ def generate_orders_header_data(schema: pa.Schema, scale: float, output_path: Pa
                 order_id += 1
                 total_orders_generated += 1
     
+    # Post-generation summary
+    if duplicate_injected_keys:
+        unique_dupes = sorted(set(duplicate_injected_keys))
+        print(
+            f"Summary: Injected {len(duplicate_injected_keys)} duplicate occurrences across "
+            f"{len(unique_dupes)} unique order_ids: {', '.join(map(str, unique_dupes))}"
+        )
+    else:
+        print("Summary: No duplicate order_ids were injected (unexpected).")
+
     return total_orders_generated, orders_per_date, start_date, num_orders, order_dates
