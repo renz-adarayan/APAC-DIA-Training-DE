@@ -129,28 +129,21 @@ def _process_event_batch(batch: List[pathlib.Path], lake_root: pathlib.Path, con
     """
     total_files_processed = 0
     
-    for partition_dir in batch:
-        print(f"  Processing partition: {partition_dir.name}")
-        
+    for i, partition_dir in enumerate(batch, 1):
         # Find JSONL files in this partition
         jsonl_files = list(partition_dir.glob('*.jsonl'))
         
         if not jsonl_files:
-            print(f"    No JSONL files found in partition {partition_dir.name}")
             continue
-        
-        print(f"    Found {len(jsonl_files)} JSONL file(s)")
         
         # Process all JSONL files in this partition
         for jsonl_file in jsonl_files:
             # Check if this file has already been processed (idempotency)
-            if not dry_run and conn:
-                if already_processed(conn, jsonl_file):
-                    print(f"    ⏭️  JSONL file already processed: {jsonl_file.name}")
-                    continue
+            if not dry_run and conn and already_processed(conn, jsonl_file):
+                continue
             
-            # Process this JSONL file
-            print(f"    📥 Processing JSONL file: {jsonl_file.name}")
+            # Process this JSONL file with progress indicator
+            print(f"Events [{i}/{len(batch)}]: {partition_dir.name}")
             ingest_file_to_bronze(
                 src_path=jsonl_file,
                 table_name='events',
@@ -162,7 +155,8 @@ def _process_event_batch(batch: List[pathlib.Path], lake_root: pathlib.Path, con
             )
             total_files_processed += 1
     
-    print(f"    ✅ Batch processing completed: {total_files_processed} files processed")
+    if total_files_processed > 0:
+        print(f"Batch completed: {total_files_processed} files processed")
 
 
 def load_events(raw_root, lake_root, conn, dry_run=False, cutoff_date: Optional[dt.date]=None, initial_mode: bool = False, batch_size_days: int = 7):
@@ -394,54 +388,42 @@ def load_sensors(raw_root, lake_root, conn, dry_run=False):
                        if p.is_dir() and p.name.startswith('store_id=')]
     
     if not store_partitions:
-        print(f"No sensor store partitions found in: {sensors_base}")
+        print(f"No sensor store partitions found")
         return
     
     # Sort store partitions by store_id (process numerically)
     store_partitions.sort(key=lambda x: int(x.name.split('=')[1]))
     
-    print(f"Found {len(store_partitions)} sensor store partitions...")
+    print(f"Sensors: Found {len(store_partitions)} stores, scanning for unprocessed data...")
     
     # Process each store's sensor data
     for store_partition in store_partitions:
-        print(f"Checking store partition: {store_partition.name}")
-        
         # Find all month partitions within this store
         month_partitions = [p for p in store_partition.iterdir() 
                            if p.is_dir() and p.name.startswith('month=')]
         
         if not month_partitions:
-            print(f"  No month partitions found in store {store_partition.name}")
             continue
         
         # Sort month partitions by date (newest first for incremental processing)
         month_partitions.sort(key=lambda x: x.name.split('=')[1], reverse=True)
         
-        print(f"  Found {len(month_partitions)} month partitions in {store_partition.name}")
-        
         # Process the latest unprocessed month partition
         for month_partition in month_partitions:
-            print(f"  Checking month partition: {month_partition.name}")
-            
             # Find CSV files in this month partition
             csv_files = list(month_partition.glob('*.csv'))
             
             if not csv_files:
-                print(f"    No CSV files found in partition {month_partition.name}")
                 continue
-            
-            print(f"    Found {len(csv_files)} CSV file(s) in partition {month_partition.name}")
             
             # Process each CSV file in this partition
             for csv_file in csv_files:
                 # Check if this file has already been processed (for incremental loading)
-                if not dry_run and conn:
-                    if already_processed(conn, csv_file):
-                        print(f"    CSV file already processed: {csv_file.name}")
-                        continue
+                if not dry_run and conn and already_processed(conn, csv_file):
+                    continue
                 
                 # Process this month's CSV file
-                print(f"    Processing CSV file: {csv_file.name}")
+                print(f"Sensors: Processing {store_partition.name}/{month_partition.name}")
                 ingest_file_to_bronze(
                     src_path=csv_file,
                     table_name='sensors',
@@ -451,19 +433,9 @@ def load_sensors(raw_root, lake_root, conn, dry_run=False):
                     conn=conn,
                     dry_run=dry_run,
                 )
-                
-                # For incremental processing, stop after processing one file per run
-                # This prevents loading all 5-10M sensor records at once
-                print(f"    Completed processing partition: {store_partition.name}/{month_partition.name}")
                 return
-            
-            # If we reach here, all files in this month partition were already processed
-            print(f"    All files in partition {month_partition.name} already processed")
-        
-        # If we reach here, all months in this store partition were already processed
-        print(f"  All month partitions in {store_partition.name} already processed")
-    
-    print("All sensor partitions have been processed or no unprocessed partitions found")
+
+    print("Sensors: All partitions already processed")
 
 
 def load_orders_header(raw_root, lake_root, conn, dry_run=False, cutoff_date: Optional[dt.date]=None):
@@ -479,7 +451,7 @@ def load_orders_header(raw_root, lake_root, conn, dry_run=False, cutoff_date: Op
                   if p.is_dir() and p.name.startswith('order_dt=')]
     
     if not partitions:
-        print(f"No order date partitions found in: {orders_base}")
+        print(f"No order date partitions found")
         return
     
     # Sort partitions by date (newest first) then apply cutoff pruning if provided
@@ -491,29 +463,22 @@ def load_orders_header(raw_root, lake_root, conn, dry_run=False, cutoff_date: Op
         if pruned:
             print(f"Pruned {pruned} orders_header partitions older than cutoff {cutoff_date}")
     
-    print(f"Found {len(partitions)} order date partitions, processing newest unprocessed first...")
+    print(f"Orders Header: Found {len(partitions)} partitions, scanning for unprocessed data...")
     
     # Process the latest unprocessed partition
     for partition_dir in partitions:
-        print(f"Checking partition: {partition_dir.name}")
-        
         # Look for orders_header.csv file in this partition
         header_file = partition_dir / 'orders_header.csv'
         
         if not header_file.exists():
-            print(f"  No orders_header.csv found in partition {partition_dir.name}")
             continue
         
-        print(f"  Found orders_header.csv in partition {partition_dir.name}")
-        
         # Check if this file has already been processed (for incremental loading)
-        if not dry_run and conn:
-            if already_processed(conn, header_file):
-                print(f"Orders header file already processed: {header_file.name}")
-                continue
+        if not dry_run and conn and already_processed(conn, header_file):
+            continue
         
         # Process this partition's orders header file
-        print(f"  Processing orders header file: {header_file.name}")
+        print(f"Orders Header: Processing {partition_dir.name}")
         ingest_file_to_bronze(
             src_path=header_file,
             table_name='orders_header',
@@ -523,13 +488,9 @@ def load_orders_header(raw_root, lake_root, conn, dry_run=False, cutoff_date: Op
             conn=conn,
             dry_run=dry_run,
         )
-        
-        # For incremental processing, stop after processing one file per run
-        # This prevents loading all 1M+ orders at once and enables batched processing
-        print(f"Completed processing partition: {partition_dir.name}")
         return
     
-    print("All order header partitions have been processed or no unprocessed partitions found")
+    print("Orders Header: All partitions already processed")
 
 
 def load_orders_lines(raw_root, lake_root, conn, dry_run=False, cutoff_date: Optional[dt.date]=None):
@@ -545,7 +506,7 @@ def load_orders_lines(raw_root, lake_root, conn, dry_run=False, cutoff_date: Opt
                   if p.is_dir() and p.name.startswith('order_dt=')]
     
     if not partitions:
-        print(f"No order date partitions found in: {orders_base}")
+        print(f"No order date partitions found")
         return
     
     # Sort partitions by date (newest first) then apply cutoff pruning if provided
@@ -557,29 +518,22 @@ def load_orders_lines(raw_root, lake_root, conn, dry_run=False, cutoff_date: Opt
         if pruned:
             print(f"Pruned {pruned} orders_lines partitions older than cutoff {cutoff_date}")
     
-    print(f"Found {len(partitions)} order date partitions, processing newest unprocessed first...")
+    print(f"Orders Lines: Found {len(partitions)} partitions, scanning for unprocessed data...")
     
     # Process the latest unprocessed partition
     for partition_dir in partitions:
-        print(f"Checking partition: {partition_dir.name}")
-        
         # Look for orders_lines.csv file in this partition
         lines_file = partition_dir / 'orders_lines.csv'
         
         if not lines_file.exists():
-            print(f"No orders_lines.csv found in partition {partition_dir.name}")
             continue
         
-        print(f"Found orders_lines.csv in partition {partition_dir.name}")
-        
         # Check if this file has already been processed (for incremental loading)
-        if not dry_run and conn:
-            if already_processed(conn, lines_file):
-                print(f"  Orders lines file already processed: {lines_file.name}")
-                continue
+        if not dry_run and conn and already_processed(conn, lines_file):
+            continue
         
         # Process this partition's orders lines file
-        print(f"  Processing orders lines file: {lines_file.name}")
+        print(f"Orders Lines: Processing {partition_dir.name}")
         ingest_file_to_bronze(
             src_path=lines_file,
             table_name='orders_lines',
@@ -589,10 +543,21 @@ def load_orders_lines(raw_root, lake_root, conn, dry_run=False, cutoff_date: Opt
             conn=conn,
             dry_run=dry_run,
         )
-        
-        # For incremental processing, stop after processing one file per run
-        # This prevents loading all 3-4M+ order lines at once and enables batched processing
-        print(f"  Completed processing partition: {partition_dir.name}")
         return
     
-    print("All order lines partitions have been processed or no unprocessed partitions found")
+    print("Orders Lines: All partitions already processed")
+
+
+__all__ = [
+    'load_customers',
+    'load_products', 
+    'load_stores',
+    'load_suppliers',
+    'load_exchange_rates',
+    'load_shipments',
+    'load_events',
+    'load_returns',
+    'load_sensors',
+    'load_orders_header',
+    'load_orders_lines',
+]

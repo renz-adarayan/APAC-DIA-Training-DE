@@ -169,3 +169,9 @@ def update_all_partition_stats(raw_root: pathlib.Path, conn):
     update_partition_stats_events(raw_root, conn)
     update_partition_stats_orders(raw_root, conn)
     update_partition_stats_sensors(raw_root, conn)
+
+
+__all__ = [
+    'should_prune_partition',
+    'update_all_partition_stats',
+]

@@ -79,3 +79,9 @@ def setup_duckdb_connection(manifest_path: str):
     init_manifest(conn)
     
     return conn
+
+
+__all__ = [
+    'ensure_dirs',
+    'setup_duckdb_connection',
+]

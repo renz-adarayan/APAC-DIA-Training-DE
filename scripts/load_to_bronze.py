@@ -41,6 +41,10 @@ def main():
     args = parse_args()
     raw_root = pathlib.Path(args.raw)
     lake_root = pathlib.Path(args.lake)
+    
+    start_time = dt.datetime.now(dt.timezone.utc)
+    already_processed_files = []
+    processed_files = []
 
     if args.dry_run:
         print("=== DRY RUN MODE - No data will be written ===")
@@ -61,18 +65,33 @@ def main():
     else:
         conn = None
 
-    load_customers(raw_root, lake_root, conn, args.dry_run)
-    load_products(raw_root, lake_root, conn, args.dry_run)
-    load_stores(raw_root, lake_root, conn, args.dry_run)
-    load_suppliers(raw_root, lake_root, conn, args.dry_run)
-    load_exchange_rates(raw_root, lake_root, conn, args.dry_run)
-    load_events(raw_root, lake_root, conn, args.dry_run, cutoff_date=cutoff_date, 
-                initial_mode=args.initial, batch_size_days=args.batch_size_days)
-    load_sensors(raw_root, lake_root, conn, args.dry_run)
-    load_orders_header(raw_root, lake_root, conn, args.dry_run, cutoff_date=cutoff_date)
-    load_orders_lines(raw_root, lake_root, conn, args.dry_run, cutoff_date=cutoff_date)
-    load_shipments(raw_root, lake_root, conn, args.dry_run)
-    load_returns(raw_root, lake_root, conn, args.dry_run)
+    # Process all data sources and collect summary info
+    for loader_name, loader_func, *extra_args in [
+        ("customers", load_customers),
+        ("products", load_products), 
+        ("stores", load_stores),
+        ("suppliers", load_suppliers),
+        ("exchange_rates", load_exchange_rates),
+        ("events", load_events, cutoff_date, args.initial, args.batch_size_days),
+        ("sensors", load_sensors),
+        ("orders_header", load_orders_header, cutoff_date),
+        ("orders_lines", load_orders_lines, cutoff_date),
+        ("shipments", load_shipments),
+        ("returns", load_returns)
+    ]:
+        if extra_args:
+            result = loader_func(raw_root, lake_root, conn, args.dry_run, *extra_args)
+        else:
+            result = loader_func(raw_root, lake_root, conn, args.dry_run)
+        
+        if result and result.endswith("_already_processed"):
+            already_processed_files.append(loader_name)
+        elif result != "skip":
+            processed_files.append(loader_name)
+
+    # Summary logging
+    if already_processed_files:
+        print(f"⏭Skipped {len(already_processed_files)} already processed: {', '.join(already_processed_files)}")
 
     if conn and args.collect_partition_stats and not args.dry_run:
         print("Collecting partition statistics...")
@@ -80,9 +99,14 @@ def main():
         # Quick summary output
         summary = conn.execute("SELECT table_name, COUNT(*), SUM(file_count), SUM(row_count) FROM partition_stats GROUP BY 1").fetchall()
         for row in summary:
-            print(f"Partition stats -> table={row[0]} partitions={row[1]} files={row[2]} rows={row[3]}")
+            print(f"   📈 {row[0]}: {row[1]} partitions, {row[2]} files, {row[3]:,} rows")
 
-    print("✅ Bronze load completed (with partition pruning/stat collection where requested).")
+    # Final summary
+    duration = dt.datetime.now(dt.timezone.utc) - start_time
+    total_processed = len(processed_files) + len(already_processed_files)
+    duration_display = f"{duration.total_seconds():.2f}s" if duration.total_seconds() >= 0.01 else "<0.01s"
+    print(f"✅ Bronze ingestion completed in {duration_display}")
+    print(f"   � Total: {total_processed} sources ({len(processed_files)} processed, {len(already_processed_files)} skipped)")
 
 if __name__ == '__main__':
     main()

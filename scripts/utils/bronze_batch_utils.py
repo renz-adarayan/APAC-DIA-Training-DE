@@ -124,3 +124,9 @@ def get_all_unprocessed_batches(partitions: List[pathlib.Path], conn, batch_size
         return []
     
     return group_partitions_by_weeks(unprocessed, batch_size_days)
+
+
+__all__ = [
+    'get_all_unprocessed_batches',
+    'get_next_unprocessed_batch',
+]
