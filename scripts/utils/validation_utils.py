@@ -2,6 +2,7 @@
 
 import hashlib
 import datetime as dt
+from datetime import timezone
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Any
 import pyarrow as pa
@@ -142,7 +143,7 @@ def validate_table_with_errors(table: pa.Table, schema: pa.Schema, src_filename:
                     table = table.set_column(table.schema.get_field_index('return_ts'), 'return_ts', return_ts_converted)
             
             # Add audit columns
-            now = pa.scalar(dt.datetime.utcnow(), type=pa.timestamp('us'))
+            now = pa.scalar(dt.datetime.now(timezone.utc), type=pa.timestamp('us'))
             row_count = len(table)
             
             # Generate row hashes
@@ -239,7 +240,7 @@ def validate_table_with_errors(table: pa.Table, schema: pa.Schema, src_filename:
                 invalid_record['reject_reason'] = error_type
                 invalid_record['reject_message'] = str(row_error)
                 invalid_record['reject_column'] = failing_column
-                invalid_record['rejected_at'] = dt.datetime.utcnow().isoformat()
+                invalid_record['rejected_at'] = dt.datetime.now(timezone.utc).isoformat()
                 
                 invalid_records.append(invalid_record)
         
@@ -248,7 +249,7 @@ def validate_table_with_errors(table: pa.Table, schema: pa.Schema, src_filename:
         if valid_rows_data:
             # Add ingestion timestamp to all valid rows
             for row in valid_rows_data:
-                row['ingestion_ts'] = dt.datetime.utcnow()
+                row['ingestion_ts'] = dt.datetime.now(timezone.utc)
             
             valid_table = pa.Table.from_pylist(valid_rows_data, schema=enhance_schema_with_audit(schema))
         
@@ -347,7 +348,7 @@ def write_rejects_to_lake(invalid_records: List[Dict[str, Any]], table_name: str
         return 0
     
     if timestamp is None:
-        timestamp = dt.datetime.utcnow()
+        timestamp = dt.datetime.now(timezone.utc)
     
     # Create rejects directory structure
     rejects_dir = lake_root / '_rejects' / table_name
@@ -414,7 +415,7 @@ def write_rejects_summary(validation_result: ValidationResult, table_name: str, 
     import json
     
     if timestamp is None:
-        timestamp = dt.datetime.utcnow()
+        timestamp = dt.datetime.now(timezone.utc)
     
     # Create rejects directory structure
     rejects_dir = lake_root / '_rejects' / table_name
@@ -460,7 +461,7 @@ def generate_processing_report(lake_root, timestamp: dt.datetime = None) -> str:
     import os
     
     if timestamp is None:
-        timestamp = dt.datetime.utcnow()
+        timestamp = dt.datetime.now(timezone.utc)
     
     # Create reports directory
     reports_dir = lake_root / '_reports'

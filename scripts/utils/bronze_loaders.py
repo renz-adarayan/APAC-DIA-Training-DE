@@ -7,6 +7,7 @@ in the bronze layer ingestion process.
 
 import pathlib
 import datetime as dt
+from datetime import timezone
 from typing import Optional, List
 import pyarrow as pa
 
@@ -272,7 +273,7 @@ def load_returns(raw_root, lake_root, conn, dry_run=False):
         return
     
     # Track processing time
-    start_time = dt.datetime.utcnow()
+    start_time = dt.datetime.now(timezone.utc)
     reject_count = 0
     error_message = None
     status = 'SUCCESS'
@@ -300,7 +301,7 @@ def load_returns(raw_root, lake_root, conn, dry_run=False):
             tbl = raw_table
             if 'src_filename' not in tbl.column_names:
                 # Add basic audit columns
-                now = pa.scalar(dt.datetime.utcnow(), type=pa.timestamp('us'))
+                now = pa.scalar(dt.datetime.now(timezone.utc), type=pa.timestamp('us'))
                 tbl = tbl.append_column('src_filename', pa.array([src_filename]*len(tbl)))
                 tbl = tbl.append_column('src_row_hash', pa.array(['basic_hash']*len(tbl)))  # Placeholder
                 tbl = tbl.append_column('ingestion_ts', pa.array([now.as_py()]*len(tbl), type=pa.timestamp('us')))
@@ -333,7 +334,7 @@ def load_returns(raw_root, lake_root, conn, dry_run=False):
             if tbl is None or len(tbl) == 0:
                 print(f"  • No valid records to process after validation")
                 # Mark as processed with zero valid rows
-                processing_duration_ms = int((dt.datetime.utcnow() - start_time).total_seconds() * 1000)
+                processing_duration_ms = int((dt.datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
                 mark_processed(conn, src_path, 0, reject_count, file_hash, 'SUCCESS',
                               f"All {validation_result.total_rows} rows rejected during validation", 
                               file_size_bytes, processing_duration_ms)
@@ -350,7 +351,7 @@ def load_returns(raw_root, lake_root, conn, dry_run=False):
         rows_inserted, rows_updated, rows_deleted = upsert_returns_delta(tbl, dl_base, primary_key='return_id')
         
         # Calculate processing duration
-        processing_duration_ms = int((dt.datetime.utcnow() - start_time).total_seconds() * 1000)
+        processing_duration_ms = int((dt.datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
         
         # Mark as successfully processed with enhanced metadata
         mark_processed(conn, src_path, len(tbl), reject_count, file_hash, status,
@@ -363,7 +364,7 @@ def load_returns(raw_root, lake_root, conn, dry_run=False):
         
     except Exception as e:
         # Handle processing failure
-        processing_duration_ms = int((dt.datetime.utcnow() - start_time).total_seconds() * 1000)
+        processing_duration_ms = int((dt.datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
         status = 'FAILED'
         error_message = str(e)
         

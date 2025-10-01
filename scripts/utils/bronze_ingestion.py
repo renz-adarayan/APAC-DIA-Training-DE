@@ -12,6 +12,7 @@ IO helpers defined in ``bronze_io`` for testability and separation of concerns.
 from __future__ import annotations
 
 import datetime as dt
+from datetime import timezone
 import pathlib
 from typing import Optional
 
@@ -67,7 +68,7 @@ def mark_processed(
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         [
-            str(src_path), dt.datetime.utcnow(), row_count, reject_count, file_hash,
+            str(src_path), dt.datetime.now(timezone.utc), row_count, reject_count, file_hash,
             status, error_message, file_size_bytes, processing_duration_ms
         ]
     )
@@ -205,7 +206,7 @@ def ingest_file_to_bronze(
         print(f"DRY RUN: Would process {src_path.name} ({file_size_bytes:,} bytes)")
         return
 
-    start_time = dt.datetime.utcnow()
+    start_time = dt.datetime.now(timezone.utc)
     reject_count = 0
     error_message = None
     status = 'SUCCESS'
@@ -231,7 +232,7 @@ def ingest_file_to_bronze(
             )
         except ImportError:
             tbl = raw_table.cast(schema, safe=False)
-            now = pa.scalar(dt.datetime.utcnow(), type=pa.timestamp('us'))
+            now = pa.scalar(dt.datetime.now(timezone.utc), type=pa.timestamp('us'))
             tbl = tbl.append_column('src_filename', pa.array([src_filename]*len(tbl)))
             tbl = tbl.append_column('src_row_hash', pa.array(['basic_hash']*len(tbl)))
             tbl = tbl.append_column('ingestion_ts', pa.array([now.as_py()]*len(tbl), type=pa.timestamp('us')))
@@ -243,7 +244,7 @@ def ingest_file_to_bronze(
                 write_rejects_summary(validation_result, table_name, lake_root, start_time)
             tbl = validation_result.valid_table
             if tbl is None or len(tbl) == 0:
-                duration_ms = int((dt.datetime.utcnow() - start_time).total_seconds() * 1000)
+                duration_ms = int((dt.datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
                 mark_processed(
                     conn, src_path, 0, reject_count, file_hash, 'SUCCESS',
                     f"All {validation_result.total_rows} rows rejected during validation",
@@ -258,7 +259,7 @@ def ingest_file_to_bronze(
         write_parquet_partitioned(tbl, pq_base, partitioning=partitioning)
         write_delta(tbl, dl_base, mode='append', partition_by=partitioning)
 
-        duration_ms = int((dt.datetime.utcnow() - start_time).total_seconds() * 1000)
+        duration_ms = int((dt.datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
         mark_processed(
             conn, src_path, len(tbl), reject_count, file_hash, status, error_message,
             file_size_bytes, duration_ms
@@ -270,7 +271,7 @@ def ingest_file_to_bronze(
         print(f"{table_name}: {len(tbl):,} rows{reject_info} in {duration_ms}ms{quality_info}")
 
     except Exception as e:  # pragma: no cover
-        duration_ms = int((dt.datetime.utcnow() - start_time).total_seconds() * 1000)
+        duration_ms = int((dt.datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
         status = 'FAILED'
         error_message = str(e)
         mark_processed(conn, src_path, 0, reject_count, file_hash, status, error_message, file_size_bytes, duration_ms)
