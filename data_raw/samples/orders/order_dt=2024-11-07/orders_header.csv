@@ -1,0 +1,4 @@
+order_id,order_ts,order_dt_local,customer_id,store_id,channel,payment_method,coupon_code,shipping_fee,currency
+846,2024-11-07T03:45:59.493679,2024-11-07,36,1,pos,debit_card,,0.00,AUD
+847,2024-11-07T20:48:34.846652,2024-11-07,62,3,web,credit_card,,19.10,AUD
+848,2024-11-07T20:05:26.874579,2024-11-07,60069,863323,pos,credit_card,,0.00,AUD

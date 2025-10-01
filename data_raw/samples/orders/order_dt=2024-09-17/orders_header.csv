@@ -1,0 +1,4 @@
+order_id,order_ts,order_dt_local,customer_id,store_id,channel,payment_method,coupon_code,shipping_fee,currency
+707,2024-09-17T09:11:12.720431,2024-09-17,12,3,pos,paypal,,0.00,AUD
+708,2024-09-17T19:37:19.173699,2024-09-17,537631,967157,pos,buy_now_pay_later,,0.00,USD
+709,2024-09-17T13:47:17.855524,2024-09-17,71,4,web,credit_card,,0.00,AUD

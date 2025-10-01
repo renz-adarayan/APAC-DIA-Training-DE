@@ -1,0 +1,9 @@
+supplier_id,supplier_code,name,country_code,lead_time_days,preferred
+1,SUP-WVJX8U,Deleon  Harris and Holloway,US,30,false
+2,SUP-VGWW4F,West-Lewis,SG,23,true
+3,SUP-UZGPPO,Cunningham-Adams,US,32,false
+4,SUP-1750CE,Walker-Medina,US,43,false
+5,SUP-9RN8QT,Adams  Collins and Patterson,NZ,22,false
+6,SUP-1ZXYVG,Rose-Garcia,US,22,true
+7,SUP-K791ZY,Barber  Bates and Lambert,JP,43,false
+8,SUP-M72JEY,Cruz-Chang,DE,34,false

@@ -1,0 +1,3 @@
+order_id,order_ts,order_dt_local,customer_id,store_id,channel,payment_method,coupon_code,shipping_fee,currency
+225,2024-03-23T09:05:43.648696,2024-03-23,389446,260810,web,buy_now_pay_later,,0.00,AUD
+226,2024-03-23T09:34:50.112608,2024-03-23,6,4,web,credit_card,,20.12,USD

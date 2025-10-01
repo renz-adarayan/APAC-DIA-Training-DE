@@ -1,0 +1,6 @@
+store_id,store_code,name,channel,region,state,latitude,longitude,open_dt,close_dt
+1,STR-BKV4Y,Ward-Martinez Centre,web,South-East,VIC,-39.690722,147.298229,2023-07-26,
+2,STR-BKV4Y,"Collins, Banks and Santos Outlet",pos,South,SA,-43.264683,132.170221,2018-02-19,
+3,STR-WVEDN,Potter-Dixon Centre,pos,North-East,QLD,-42.009421,132.364901,2015-07-05,2019-08-04
+4,STR-LRQVS,Wright-Lopez Centre,pos,North-East,QLD,-40.070454,136.660019,2021-08-28,
+5,STR-3TZK3,Mclean-Gamble Centre,pos,South-East,VIC,-34.201020,135.348086,2023-02-18,
