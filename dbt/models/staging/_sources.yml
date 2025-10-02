@@ -5,13 +5,114 @@ sources:
     description: "Bronze layer data sources from lake/bronze directory"
     tables:
       - name: customers
+        columns:
+          - name: customer_id
+          - name: natural_key
+          - name: first_name
+          - name: last_name
+          - name: email
+          - name: phone
+          - name: birth_date
+          - name: address_line1
+          - name: address_line2
+          - name: city
+          - name: state_region
+          - name: postcode
+          - name: country_code
+          - name: latitude
+          - name: longitude
+          - name: join_ts
+          - name: is_vip
+          - name: gdpr_consent
       - name: products
+        columns:
+          - name: product_id
+          - name: sku
+          - name: name
+          - name: category
+          - name: subcategory
+          - name: current_price
+          - name: currency
+          - name: introduced_dt
+          - name: discontinued_dt
+          - name: is_discontinued
       - name: stores
+        columns:
+          - name: store_id
+          - name: store_code
+          - name: name
+          - name: channel
+          - name: region
+          - name: state
+          - name: latitude
+          - name: longitude
+          - name: open_dt
+          - name: close_dt
       - name: suppliers
-      - name: orders
-      - name: order_lines
+        columns:
+          - name: supplier_id
+          - name: supplier_code
+          - name: name
+          - name: country_code
+          - name: lead_time_days
+          - name: preferred
+      - name: orders_header
+        columns:
+          - name: order_id
+          - name: order_dt
+          - name: order_ts
+          - name: order_dt_local
+          - name: customer_id
+          - name: store_id
+          - name: channel
+          - name: payment_method
+          - name: coupon_code
+          - name: shipping_fee
+          - name: currency
+      - name: orders_lines
+        columns:
+          - name: order_id
+          - name: line_number
+          - name: product_id
+          - name: qty
+          - name: unit_price
+          - name: line_discount_pct
+          - name: tax_pct
       - name: events
+        columns:
+          - name: event_id
+          - name: event_ts
+          - name: event_type
+          - name: user_id
+          - name: session_id
+          - name: payload
       - name: sensors
+        columns:
+          - name: sensor_ts
+          - name: store_id
+          - name: shelf_id
+          - name: temperature_c
+          - name: humidity_pct
+          - name: battery_mv
       - name: exchange_rates
+        columns:
+          - name: date
+          - name: currency
+          - name: rate_to_aud
       - name: shipments
+        columns:
+          - name: shipment_id
+          - name: order_id
+          - name: carrier
+          - name: shipped_at
+          - name: delivered_at
+          - name: ship_cost
       - name: returns
+        columns:
+          - name: return_id
+          - name: order_id
+          - name: product_id
+          - name: return_ts
+          - name: qty
+          - name: reason
+          - name: return_reason_code
