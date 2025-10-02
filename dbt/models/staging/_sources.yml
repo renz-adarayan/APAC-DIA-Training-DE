@@ -1,0 +1,17 @@
+version: 1
+
+sources:
+  - name: bronze
+    description: "Bronze layer data sources from lake/bronze directory"
+    tables:
+      - name: customers
+      - name: products
+      - name: stores
+      - name: suppliers
+      - name: orders
+      - name: order_lines
+      - name: events
+      - name: sensors
+      - name: exchange_rates
+      - name: shipments
+      - name: returns
