@@ -13,6 +13,16 @@ seed-paths: ['seeds']
 target-path: 'target'
 clean-targets: ['target']
 
+# Variables for Silver layer implementation
+vars:
+  silver_lookback_hours: 48  # Late-arriving data lookback window
+
+# Global configuration
+quoting:
+  database: false
+  schema: false
+  identifier: false
+
 models:
   local_de_assessment:
     +materialized: view
