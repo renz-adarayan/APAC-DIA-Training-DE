@@ -2,9 +2,13 @@ version: 1
 
 sources:
   - name: bronze
-    description: "Bronze layer data sources from lake/bronze directory"
+    freshness:
+      warn_after: {count: 12, period: hour}
+      error_after: {count: 24, period: hour}
     tables:
       - name: customers
+        tags: ['bronze_source']
+        loaded_at_field: ingestion_ts
         columns:
           - name: customer_id
           - name: natural_key
@@ -25,6 +29,8 @@ sources:
           - name: is_vip
           - name: gdpr_consent
       - name: products
+        tags: ['bronze_source']
+        loaded_at_field: ingestion_ts
         columns:
           - name: product_id
           - name: sku
@@ -37,6 +43,8 @@ sources:
           - name: discontinued_dt
           - name: is_discontinued
       - name: stores
+        tags: ['bronze_source']
+        loaded_at_field: ingestion_ts
         columns:
           - name: store_id
           - name: store_code
@@ -49,6 +57,8 @@ sources:
           - name: open_dt
           - name: close_dt
       - name: suppliers
+        tags: ['bronze_source']
+        loaded_at_field: ingestion_ts
         columns:
           - name: supplier_id
           - name: supplier_code
@@ -57,6 +67,8 @@ sources:
           - name: lead_time_days
           - name: preferred
       - name: orders_header
+        tags: ['bronze_source']
+        loaded_at_field: ingestion_ts
         columns:
           - name: order_id
           - name: order_dt
@@ -70,6 +82,8 @@ sources:
           - name: shipping_fee
           - name: currency
       - name: orders_lines
+        tags: ['bronze_source']
+        loaded_at_field: ingestion_ts
         columns:
           - name: order_id
           - name: line_number
@@ -79,6 +93,8 @@ sources:
           - name: line_discount_pct
           - name: tax_pct
       - name: events
+        tags: ['bronze_source']
+        loaded_at_field: ingestion_ts
         columns:
           - name: event_id
           - name: event_ts
@@ -87,6 +103,8 @@ sources:
           - name: session_id
           - name: payload
       - name: sensors
+        tags: ['bronze_source']
+        loaded_at_field: ingestion_ts
         columns:
           - name: sensor_ts
           - name: store_id
@@ -95,11 +113,15 @@ sources:
           - name: humidity_pct
           - name: battery_mv
       - name: exchange_rates
+        tags: ['bronze_source']
+        loaded_at_field: ingestion_ts
         columns:
           - name: date
           - name: currency
           - name: rate_to_aud
       - name: shipments
+        tags: ['bronze_source']
+        loaded_at_field: ingestion_ts
         columns:
           - name: shipment_id
           - name: order_id
@@ -108,6 +130,8 @@ sources:
           - name: delivered_at
           - name: ship_cost
       - name: returns
+        tags: ['bronze_source']
+        loaded_at_field: ingestion_ts
         columns:
           - name: return_id
           - name: order_id
