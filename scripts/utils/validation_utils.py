@@ -1,6 +1,7 @@
 """Validation utilities for enhanced error handling and reject processing."""
 
 import hashlib
+import json
 import datetime as dt
 from datetime import timezone
 from dataclasses import dataclass
@@ -185,10 +186,21 @@ def validate_table_with_errors(table: pa.Table, schema: pa.Schema, src_filename:
             row_data = {col: table_dict[col][row_idx] for col in table_dict.keys()}
             row_hashes.append(generate_row_hash(row_data))
         
-        # Add audit columns to table
-        valid_table = valid_table.append_column('src_filename', pa.array([src_filename] * row_count))
-        valid_table = valid_table.append_column('src_row_hash', pa.array(row_hashes))
-        valid_table = valid_table.append_column('ingestion_ts', pa.array([now.as_py()] * row_count, type=pa.timestamp('us')))
+        # Add audit columns/metadata based on schema type
+        if is_events_schema(schema):
+            # For events: embed audit metadata into JSON objects
+            print(f"  • Detected events schema - embedding audit metadata into JSON objects")
+            json_data = valid_table.column('json').to_pylist()
+            enriched_json = []
+            for idx, json_str in enumerate(json_data):
+                enriched = embed_audit_in_json(json_str, src_filename, row_hashes[idx], now.as_py())
+                enriched_json.append(enriched)
+            valid_table = pa.table({'json': enriched_json}, schema=schema)
+        else:
+            # For other formats: append audit columns
+            valid_table = valid_table.append_column('src_filename', pa.array([src_filename] * row_count))
+            valid_table = valid_table.append_column('src_row_hash', pa.array(row_hashes))
+            valid_table = valid_table.append_column('ingestion_ts', pa.array([now.as_py()] * row_count, type=pa.timestamp('us')))
         
         # If successful, all records are valid
         return ValidationResult(
@@ -263,11 +275,23 @@ def validate_table_with_errors(table: pa.Table, schema: pa.Schema, src_filename:
         # Create valid table from successful rows
         valid_table = None
         if valid_rows_data:
-            # Add ingestion timestamp to all valid rows
-            for row in valid_rows_data:
-                row['ingestion_ts'] = dt.datetime.now(timezone.utc)
-            
-            valid_table = pa.Table.from_pylist(valid_rows_data, schema=enhance_schema_with_audit(schema))
+            if is_events_schema(schema):
+                # For events: embed audit metadata into JSON objects
+                print(f"  • Creating valid events table with embedded audit metadata")
+                enriched_json = []
+                ingestion_ts_val = dt.datetime.now(timezone.utc)
+                for row_dict in valid_rows_data:
+                    json_str = row_dict.get('json', '{}')
+                    src_filename_val = row_dict.get('src_filename', src_filename)
+                    src_row_hash_val = row_dict.get('src_row_hash', '')
+                    enriched = embed_audit_in_json(json_str, src_filename_val, src_row_hash_val, ingestion_ts_val)
+                    enriched_json.append(enriched)
+                valid_table = pa.table({'json': enriched_json}, schema=schema)
+            else:
+                # For other formats: add audit columns
+                for row in valid_rows_data:
+                    row['ingestion_ts'] = dt.datetime.now(timezone.utc)
+                valid_table = pa.Table.from_pylist(valid_rows_data, schema=enhance_schema_with_audit(schema))
         
         return ValidationResult(
             valid_table=valid_table,
@@ -310,6 +334,44 @@ def generate_row_hash(row_data: Dict[str, Any]) -> str:
     
     # Generate SHA-256 hash
     return hashlib.sha256(row_str.encode('utf-8')).hexdigest()[:16]  # First 16 chars for brevity
+
+
+def is_events_schema(schema: pa.Schema) -> bool:
+    """Check if schema is for events table (single 'json' column)."""
+    return len(schema) == 1 and schema[0].name == 'json' and schema[0].type == pa.string()
+
+
+def embed_audit_in_json(json_str: str, src_filename: str, src_row_hash: str, ingestion_ts: dt.datetime) -> str:
+    """Embed audit metadata into a JSON object string.
+    
+    Args:
+        json_str: Original JSON string
+        src_filename: Source filename for audit
+        src_row_hash: Row hash for audit
+        ingestion_ts: Ingestion timestamp
+        
+    Returns:
+        JSON string with embedded audit fields
+    """
+    try:
+        obj = json.loads(json_str)
+        # Add audit metadata as top-level fields
+        obj['_audit'] = {
+            'src_filename': src_filename,
+            'src_row_hash': src_row_hash,
+            'ingestion_ts': ingestion_ts.isoformat()
+        }
+        return json.dumps(obj, ensure_ascii=False)
+    except (json.JSONDecodeError, TypeError):
+        # If JSON is malformed, wrap it with audit data
+        return json.dumps({
+            'original': json_str,
+            '_audit': {
+                'src_filename': src_filename,
+                'src_row_hash': src_row_hash,
+                'ingestion_ts': ingestion_ts.isoformat()
+            }
+        }, ensure_ascii=False)
 
 
 def enhance_schema_with_audit(base_schema: pa.Schema) -> pa.Schema:
