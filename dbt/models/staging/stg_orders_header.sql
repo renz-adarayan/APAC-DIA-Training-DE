@@ -18,7 +18,6 @@ cleaned as (
     {{ safe_cast('store_id', 'bigint') }} as store_id,
     
     -- Order information
-    {{ safe_cast('order_dt', 'date') }} as order_date,
     {{ normalize_timestamp('order_ts') }} as order_ts_utc,
     {{ safe_cast('order_dt_local', 'date') }} as order_date_local,
     {{ clean_string('channel') }} as channel,
@@ -48,7 +47,6 @@ final as (
     order_id,
     customer_id,
     store_id,
-    order_date,
     order_ts_utc,
     order_date_local,
     channel,
