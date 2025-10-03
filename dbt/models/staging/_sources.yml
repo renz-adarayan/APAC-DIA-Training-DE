@@ -122,15 +122,8 @@ sources:
         tags: ['bronze_source']
         loaded_at_field: ingestion_ts
         columns:
-          - name: event_id
-          - name: event_ts
-          - name: event_type
-          - name: user_id
-          - name: session_id
-          - name: payload
-          - name: src_filename
-          - name: src_row_hash
-          - name: ingestion_ts
+          - name: json
+            description: "JSON column containing the entire event data including _audit metadata"
       - name: sensors
         identifier: bronze_sensors
         tags: ['bronze_source']
