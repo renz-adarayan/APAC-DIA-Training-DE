@@ -4,6 +4,9 @@
 -- When multiple records exist for the same shipment_id, we keep the most recent
 -- record based on ingestion_ts to ensure data freshness and consistency.
 
+-- Ensure bronze views are created first
+{% set _ = ref('_sources') %}
+
 with src as (
   select * from {{ source('bronze', 'shipments') }}
 ),
