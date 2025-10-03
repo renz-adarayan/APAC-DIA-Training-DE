@@ -48,6 +48,9 @@ sources:
           - name: introduced_dt
           - name: discontinued_dt
           - name: is_discontinued
+          - name: src_filename
+          - name: src_row_hash
+          - name: ingestion_ts
       - name: stores
         identifier: bronze_stores
         tags: ['bronze_source']
@@ -63,6 +66,9 @@ sources:
           - name: longitude
           - name: open_dt
           - name: close_dt
+          - name: src_filename
+          - name: src_row_hash
+          - name: ingestion_ts
       - name: suppliers
         identifier: bronze_suppliers
         tags: ['bronze_source']
@@ -74,6 +80,9 @@ sources:
           - name: country_code
           - name: lead_time_days
           - name: preferred
+          - name: src_filename
+          - name: src_row_hash
+          - name: ingestion_ts
       - name: orders_header
         identifier: bronze_orders_header
         tags: ['bronze_source']
@@ -90,6 +99,9 @@ sources:
           - name: coupon_code
           - name: shipping_fee
           - name: currency
+          - name: src_filename
+          - name: src_row_hash
+          - name: ingestion_ts
       - name: orders_lines
         identifier: bronze_orders_lines
         tags: ['bronze_source']
@@ -102,6 +114,9 @@ sources:
           - name: unit_price
           - name: line_discount_pct
           - name: tax_pct
+          - name: src_filename
+          - name: src_row_hash
+          - name: ingestion_ts
       - name: events
         identifier: bronze_events
         tags: ['bronze_source']
@@ -113,6 +128,9 @@ sources:
           - name: user_id
           - name: session_id
           - name: payload
+          - name: src_filename
+          - name: src_row_hash
+          - name: ingestion_ts
       - name: sensors
         identifier: bronze_sensors
         tags: ['bronze_source']
@@ -124,6 +142,9 @@ sources:
           - name: temperature_c
           - name: humidity_pct
           - name: battery_mv
+          - name: src_filename
+          - name: src_row_hash
+          - name: ingestion_ts
       - name: exchange_rates
         identifier: bronze_exchange_rates
         tags: ['bronze_source']
@@ -132,6 +153,9 @@ sources:
           - name: date
           - name: currency
           - name: rate_to_aud
+          - name: src_filename
+          - name: src_row_hash
+          - name: ingestion_ts
       - name: shipments
         identifier: bronze_shipments
         tags: ['bronze_source']
@@ -143,6 +167,9 @@ sources:
           - name: shipped_at
           - name: delivered_at
           - name: ship_cost
+          - name: src_filename
+          - name: src_row_hash
+          - name: ingestion_ts
       - name: returns
         identifier: bronze_returns
         tags: ['bronze_source']
@@ -155,3 +182,6 @@ sources:
           - name: qty
           - name: reason
           - name: return_reason_code
+          - name: src_filename
+          - name: src_row_hash
+          - name: ingestion_ts
