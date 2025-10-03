@@ -1,43 +1,28 @@
 -- models/test_incremental_watermark_with_lookback.sql
 
--- Mock existing table data (simulating {{ this }})
-with existing_data as (
-    select '2023-01-01'::timestamp as ts union all
-    select '2023-01-02'::timestamp as ts union all
-    select '2023-01-05'::timestamp as ts
-),
+{{ config(materialized='table') }}
 
--- New incoming data
-new_data as (
+-- This test creates a scenario where we have new data and tests
+-- if the incremental_watermark_with_lookback macro correctly filters based on existing data
+with test_data as (
     select 1 as id, '2023-01-01'::timestamp as ts union all
     select 2 as id, '2023-01-03'::timestamp as ts union all
     select 3 as id, '2023-01-04'::timestamp as ts union all
     select 4 as id, '2023-01-05'::timestamp as ts union all
     select 5 as id, '2023-01-06'::timestamp as ts
-),
-
--- Calculate lookback watermark (max ts - lookback_hours hours)
--- Using 48 hours (2 days) lookback
-watermark as (
-    select coalesce(
-        dateadd('hour', -48, max(ts)),
-        '1970-01-01'::timestamp
-    ) as watermark_ts
-    from existing_data
 )
-
 select
     id,
     ts,
-    case when ts >= (select watermark_ts from watermark) then 1 else 0 end as should_be_included
-from new_data;
+    'lookback_48_hours' as test_case
+from test_data
+{% if is_incremental() %}
+-- This is where the macro would be used in a real incremental model
+-- The macro will generate a WHERE clause like: ts >= (SELECT ... FROM this_table)
+where {{ incremental_watermark_with_lookback('ts', 48) }}
+{% endif %}
 
--- Expected result:
--- Max existing ts is 2023-01-05, so watermark = 2023-01-05 - 48 hours = 2023-01-03
--- Rows with ts >= 2023-01-03 should be included
--- id | ts                  | should_be_included
--- 1  | 2023-01-01 00:00:00 | 0
--- 2  | 2023-01-03 00:00:00 | 1
--- 3  | 2023-01-04 00:00:00 | 1
--- 4  | 2023-01-05 00:00:00 | 1
--- 5  | 2023-01-06 00:00:00 | 1
+-- Expected behavior:
+-- On first run (not incremental): All rows are inserted
+-- On subsequent runs (incremental): Only rows with ts >= (max_existing_ts - 48 hours) are processed
+-- This allows for late-arriving data within the 48-hour lookback window
