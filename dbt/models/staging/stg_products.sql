@@ -31,6 +31,30 @@ cleaned as (
     {{ safe_cast('discontinued_dt', 'date') }} as discontinued_dt,
     {{ safe_cast('is_discontinued', 'boolean') }} as is_discontinued,
     
+    -- Product business metrics
+    date_diff('day', {{ safe_cast('introduced_dt', 'date') }}, current_date) as product_age_days,
+    
+    case 
+      when date_diff('day', {{ safe_cast('introduced_dt', 'date') }}, current_date) <= 30 then 'new'
+      when date_diff('day', {{ safe_cast('introduced_dt', 'date') }}, current_date) <= 365 then 'recent'
+      when date_diff('day', {{ safe_cast('introduced_dt', 'date') }}, current_date) <= 1095 then 'mature'  -- 3 years
+      else 'legacy'
+    end as product_lifecycle_stage,
+    
+    case 
+      when {{ safe_cast('current_price', 'decimal(10,2)') }} <= 25.00 then 'budget'
+      when {{ safe_cast('current_price', 'decimal(10,2)') }} <= 100.00 then 'mid_range'
+      when {{ safe_cast('current_price', 'decimal(10,2)') }} <= 500.00 then 'premium'
+      else 'luxury'
+    end as price_tier,
+    
+    case 
+      when {{ safe_cast('is_discontinued', 'boolean') }} = true then 'discontinued'
+      when {{ safe_cast('discontinued_dt', 'date') }} is not null then 'end_of_life'
+      when date_diff('day', {{ safe_cast('introduced_dt', 'date') }}, current_date) <= 90 then 'launch_phase'
+      else 'active'
+    end as product_status,
+    
     -- Audit columns
     {{ clean_string('src_filename') }} as src_filename,
     {{ clean_string('src_row_hash') }} as src_row_hash,
@@ -57,6 +81,10 @@ final as (
     introduced_dt,
     discontinued_dt,
     is_discontinued,
+    product_age_days,
+    product_lifecycle_stage,
+    price_tier,
+    product_status,
     src_filename,
     src_row_hash,
     ingestion_ts

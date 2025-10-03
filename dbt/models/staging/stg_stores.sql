@@ -31,6 +31,27 @@ cleaned as (
     {{ safe_cast('open_dt', 'date') }} as opened_date,
     {{ safe_cast('close_dt', 'date') }} as closed_date,
     
+    -- Store business metrics
+    date_diff('day', {{ safe_cast('open_dt', 'date') }}, current_date) as store_age_days,
+    
+    case 
+      when date_diff('day', {{ safe_cast('open_dt', 'date') }}, current_date) <= 365 then 'new_store'
+      when date_diff('day', {{ safe_cast('open_dt', 'date') }}, current_date) <= 1825 then 'established'  -- 5 years
+      else 'mature_store'
+    end as store_maturity,
+    
+    case 
+      when {{ safe_cast('close_dt', 'date') }} is not null then 'closed'
+      when date_diff('day', {{ safe_cast('open_dt', 'date') }}, current_date) <= 90 then 'opening_phase'
+      else 'operational'
+    end as store_status,
+    
+    case 
+      when upper({{ clean_string('channel') }}) = 'WEB' then 'digital'
+      when upper({{ clean_string('channel') }}) = 'POS' then 'physical'
+      else 'other'
+    end as store_type_category,
+    
     -- Audit columns
     src_filename,
     src_row_hash,
@@ -57,6 +78,10 @@ final as (
     longitude,
     opened_date,
     closed_date,
+    store_age_days,
+    store_maturity,
+    store_status,
+    store_type_category,
     src_filename,
     src_row_hash,
     ingestion_ts

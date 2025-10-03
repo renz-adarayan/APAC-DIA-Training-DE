@@ -40,6 +40,21 @@ cleaned as (
     {{ calculate_age('birth_date') }} as age_years,
     {{ normalize_timestamp('join_ts') }} as join_ts_utc,
     
+    -- Customer business metrics
+    date_diff('day', {{ safe_cast('join_ts', 'date') }}, current_date) as customer_tenure_days,
+    case 
+      when {{ calculate_age('birth_date') }} <= 27 then 'gen_z'        -- Born 1997-2012 (ages 13-27 in 2024)
+      when {{ calculate_age('birth_date') }} <= 43 then 'millennial'   -- Born 1981-1996 (ages 28-43 in 2024)
+      when {{ calculate_age('birth_date') }} <= 59 then 'gen_x'        -- Born 1965-1980 (ages 44-59 in 2024)
+      when {{ calculate_age('birth_date') }} <= 78 then 'boomer'       -- Born 1946-1964 (ages 60-78 in 2024)
+      else 'silent_generation'                                         -- Born before 1946 (79+ in 2024)
+    end as generation,
+    case 
+      when date_diff('day', {{ safe_cast('join_ts', 'date') }}, current_date) < 30 then 'new'
+      when date_diff('day', {{ safe_cast('join_ts', 'date') }}, current_date) < 365 then 'recent'
+      else 'established'
+    end as customer_lifecycle_stage,
+    
     -- Flags
     {{ safe_cast('is_vip', 'boolean') }} as is_vip,
     {{ safe_cast('gdpr_consent', 'boolean') }} as gdpr_consent,
@@ -80,6 +95,9 @@ final as (
     birth_date,
     age_years,
     join_ts_utc,
+    customer_tenure_days,
+    generation,
+    customer_lifecycle_stage,
     is_vip,
     gdpr_consent,
     is_email_valid,
