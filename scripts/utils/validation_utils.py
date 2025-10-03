@@ -174,6 +174,22 @@ def validate_table_with_errors(table: pa.Table, schema: pa.Schema, src_filename:
         # First attempt: try to cast the entire table
         valid_table = table.cast(schema, safe=False)
         
+        # Add audit columns to all successful records
+        now = pa.scalar(dt.datetime.now(timezone.utc), type=pa.timestamp('us'))
+        row_count = len(valid_table)
+        
+        # Generate row hashes
+        table_dict = valid_table.to_pydict()
+        row_hashes = []
+        for row_idx in range(row_count):
+            row_data = {col: table_dict[col][row_idx] for col in table_dict.keys()}
+            row_hashes.append(generate_row_hash(row_data))
+        
+        # Add audit columns to table
+        valid_table = valid_table.append_column('src_filename', pa.array([src_filename] * row_count))
+        valid_table = valid_table.append_column('src_row_hash', pa.array(row_hashes))
+        valid_table = valid_table.append_column('ingestion_ts', pa.array([now.as_py()] * row_count, type=pa.timestamp('us')))
+        
         # If successful, all records are valid
         return ValidationResult(
             valid_table=valid_table,
