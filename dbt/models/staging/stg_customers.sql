@@ -1,5 +1,10 @@
 {{ config(materialized='table') }}
 
+-- DEDUPLICATION STRATEGY:
+-- This model handles duplicate customers by natural_key as per requirements.
+-- When multiple records exist for the same natural_key, we keep the most recent
+-- record based on ingestion_ts to ensure data freshness and consistency.
+
 with src as (
   select * from {{ source('bronze', 'customers') }}
 ),
@@ -41,16 +46,45 @@ cleaned as (
     {{ validate_email('email') }} as is_email_valid,
     
     -- Metadata
-    {{ normalize_timestamp('updated_at') }} as updated_at,
     {{ normalize_timestamp('ingestion_ts') }} as ingestion_ts
 
   from src
 ),
 
 deduped as (
-  select *
+  select *,
+    row_number() over (
+      partition by natural_key
+      order by ingestion_ts desc
+    ) as rn
   from cleaned
-  where {{ dedup_latest('email_normalized', 'coalesce(updated_at, ingestion_ts)') }}
+),
+
+final as (
+  select 
+    customer_id,
+    natural_key,
+    first_name,
+    last_name,
+    email_normalized,
+    phone,
+    address_line1,
+    address_line2,
+    city,
+    state_region,
+    postcode,
+    country_code,
+    latitude,
+    longitude,
+    birth_date,
+    age_years,
+    join_ts_utc,
+    is_vip,
+    gdpr_consent,
+    is_email_valid,
+    ingestion_ts
+  from deduped
+  where rn = 1
 )
 
-select * from deduped
+select * from final
