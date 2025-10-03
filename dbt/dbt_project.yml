@@ -16,6 +16,7 @@ clean-targets: ['target']
 # Variables for Silver layer implementation
 vars:
   silver_lookback_hours: 48  # Late-arriving data lookback window
+  # lake_root will be set dynamically by the macro
 
 # Global configuration
 quoting:

@@ -1,8 +1,10 @@
--- External views pointing at Bronze Parquet/Delta. Adjust path if needed.
-{% set lake_root = '../lake/bronze' %}
+-- This model creates Bronze views and returns a status
+{{ config(
+    materialized='table',
+    pre_hook="{{ create_bronze_views() }}"
+) }}
 
-create or replace view bronze_customers_parquet as
-select * from read_parquet('{{ lake_root }}/parquet/customers/*.parquet');
-
-create or replace view bronze_customers_delta as
-select * from delta_scan('{{ lake_root }}/delta/customers');
+-- Return a simple status table indicating views were created
+select 
+    'bronze_views_created' as status,
+    current_timestamp as created_at
