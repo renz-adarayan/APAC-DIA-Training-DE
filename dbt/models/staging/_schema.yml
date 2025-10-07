@@ -56,7 +56,15 @@ models:
           - unique
           - not_null
       - name: customer_id
+        tests:
+          - relationships:
+              to: ref('stg_customers')
+              field: customer_id
       - name: store_id
+        tests:
+          - relationships:
+              to: ref('stg_stores')
+              field: store_id
       - name: channel
       - name: order_value_tier
 
@@ -65,10 +73,17 @@ models:
       - name: order_id
         tests:
           - not_null
+          - relationships:
+              to: ref('stg_orders_header')
+              field: order_id
       - name: line_number
         tests:
           - not_null
       - name: product_id
+        tests:
+          - relationships:
+              to: ref('stg_products')
+              field: product_id
       - name: order_line_business_key
         tests:
           - unique
@@ -88,6 +103,10 @@ models:
         tests:
           - not_null
       - name: store_id
+        tests:
+          - relationships:
+              to: ref('stg_stores')
+              field: store_id
       - name: shelf_id
 
   - name: stg_exchange_rates
@@ -106,6 +125,10 @@ models:
           - unique
           - not_null
       - name: order_id
+        tests:
+          - relationships:
+              to: ref('stg_orders_header')
+              field: order_id
 
   - name: stg_returns
     columns:
@@ -114,4 +137,12 @@ models:
           - unique
           - not_null
       - name: order_id
+        tests:
+          - relationships:
+              to: ref('stg_orders_header')
+              field: order_id
       - name: product_id
+        tests:
+          - relationships:
+              to: ref('stg_products')
+              field: product_id
