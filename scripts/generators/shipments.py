@@ -11,13 +11,14 @@ from utils.data_utils import apply_scale_to_targets
 from utils.constants import TARGET_ROWS
 
 
-def generate_shipments_data(schema: pa.Schema, scale: float, output_path: Path) -> int:
+def generate_shipments_data(schema: pa.Schema, scale: float, output_path: Path, orders_count: int) -> int:
     """Generate shipments data and write to Parquet file.
     
     Args:
         schema: PyArrow schema for shipments
         scale: Scaling factor for number of records
         output_path: Path to write the Parquet file
+        orders_count: Number of orders available for shipments (for FK references)
     """
     num_shipments = apply_scale_to_targets(TARGET_ROWS['shipments'], scale)
     
@@ -48,7 +49,21 @@ def generate_shipments_data(schema: pa.Schema, scale: float, output_path: Path) 
     
     # Generate shipment data
     shipment_ids = list(range(1, num_shipments + 1))
-    order_ids = list(range(1, num_shipments + 1))  # 1:1 relationship for simplicity
+    
+    # Generate order_ids - use actual orders count with some FK violations for testing
+    order_ids = []
+    num_invalid_order_fk = max(1, int(num_shipments * 0.01))  # 1% invalid FKs for testing
+    invalid_fk_count = 0
+    
+    for i in range(num_shipments):
+        if invalid_fk_count < num_invalid_order_fk and random.random() < 0.015:
+            # Invalid order_id (anomaly for testing)
+            order_id = random.randint(orders_count + 1, orders_count + 10000)
+            invalid_fk_count += 1
+        else:
+            # Valid order_id
+            order_id = random.randint(1, orders_count)
+        order_ids.append(order_id)
     
     # Generate shipped dates
     shipped_dates = []

@@ -121,7 +121,7 @@ def main():
     results['exchange_rates'] = generate_exchange_rates_data(exchange_rates_schema, args.scale, paths['exchange_rates'])
 
     print("Generating shipments data...")
-    results['shipments'] = generate_shipments_data(shipments_schema, args.scale, paths['shipments'])
+    results['shipments'] = generate_shipments_data(shipments_schema, args.scale, paths['shipments'], results['orders_header'])
 
     print("Generating returns data...")
     results['returns'] = generate_returns_data(returns_day1_schema, args.scale, paths['returns'], results['orders_header'])
