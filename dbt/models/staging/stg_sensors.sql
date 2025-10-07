@@ -25,6 +25,17 @@ cleaned as (
     {{ safe_cast('humidity_pct', 'double') }} as humidity_percent,
     {{ safe_cast('battery_mv', 'integer') }} as battery_millivolts,
     
+    -- Data quality flags for out-of-range values
+    case 
+      when {{ safe_cast('temperature_c', 'double') }} < -50 or {{ safe_cast('temperature_c', 'double') }} > 100 then true
+      else false
+    end as is_temperature_out_of_range,
+    
+    case 
+      when {{ safe_cast('humidity_pct', 'double') }} < 0 or {{ safe_cast('humidity_pct', 'double') }} > 100 then true
+      else false
+    end as is_humidity_out_of_range,
+    
     -- Business key for deduplication
     {{ hash_columns(['sensor_ts', 'store_id', 'shelf_id']) }} as sensor_reading_key,
     
@@ -34,6 +45,8 @@ cleaned as (
     {{ normalize_timestamp('ingestion_ts') }} as ingestion_ts
     
   from src
+  -- Filter out records with missing sensor_ts as they're unusable for time-series analysis
+  where sensor_ts is not null
 ),
 
 deduped as (
@@ -50,6 +63,15 @@ final as (
     temperature_celsius,
     humidity_percent,
     battery_millivolts,
+    is_temperature_out_of_range,
+    is_humidity_out_of_range,
+    
+    -- Overall data quality flag
+    case 
+      when is_temperature_out_of_range or is_humidity_out_of_range then true
+      else false
+    end as has_sensor_anomaly,
+    
     sensor_reading_key,
     src_filename,
     src_row_hash,

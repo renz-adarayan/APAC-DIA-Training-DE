@@ -22,8 +22,12 @@ cleaned as (
     {{ clean_string('category') }} as category,
     {{ clean_string('subcategory') }} as subcategory,
     
-    -- Pricing information
-    {{ safe_cast('current_price', 'decimal(10,2)') }} as current_price,
+    -- Pricing information (handle anomalies: 0.1-0.5% missing/invalid prices)
+    case 
+      when {{ safe_cast('current_price', 'decimal(10,2)') }} > 0 
+      then {{ safe_cast('current_price', 'decimal(10,2)') }}
+      else null 
+    end as current_price,
     {{ clean_string('currency') }} as currency,
     
     -- Product lifecycle dates
@@ -42,6 +46,7 @@ cleaned as (
     end as product_lifecycle_stage,
     
     case 
+      when {{ safe_cast('current_price', 'decimal(10,2)') }} is null or {{ safe_cast('current_price', 'decimal(10,2)') }} <= 0 then 'unknown'
       when {{ safe_cast('current_price', 'decimal(10,2)') }} <= 25.00 then 'budget'
       when {{ safe_cast('current_price', 'decimal(10,2)') }} <= 100.00 then 'mid_range'
       when {{ safe_cast('current_price', 'decimal(10,2)') }} <= 500.00 then 'premium'

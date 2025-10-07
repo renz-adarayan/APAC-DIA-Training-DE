@@ -20,7 +20,11 @@ cleaned as (
     -- Personal information with normalization
     {{ clean_string('first_name', lower=false) }} as first_name,
     {{ clean_string('last_name', lower=false) }} as last_name,
-    {{ clean_string('email', lower=true) }} as email_normalized,
+    -- Only normalize valid emails, set invalid ones to NULL
+    case 
+      when {{ validate_email('email') }} then {{ clean_string('email', lower=true) }}
+      else null 
+    end as email_normalized,
     {{ clean_string('phone') }} as phone,
     
     -- Address information  
@@ -31,9 +35,17 @@ cleaned as (
     {{ clean_string('postcode') }} as postcode,
     {{ clean_string('country_code') }} as country_code,
     
-    -- Geographic coordinates with validation
-    {{ safe_cast('latitude', 'double') }} as latitude,
-    {{ safe_cast('longitude', 'double') }} as longitude,
+    -- Geographic coordinates with validation (handle anomalies)
+    case 
+      when {{ safe_cast('latitude', 'double') }} between -90 and 90 
+      then {{ safe_cast('latitude', 'double') }}
+      else null 
+    end as latitude,
+    case 
+      when {{ safe_cast('longitude', 'double') }} between -180 and 180 
+      then {{ safe_cast('longitude', 'double') }}
+      else null 
+    end as longitude,
     
     -- Dates and derived columns
     {{ safe_cast('birth_date', 'date') }} as birth_date,

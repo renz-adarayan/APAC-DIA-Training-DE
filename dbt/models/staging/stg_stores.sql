@@ -23,9 +23,17 @@ cleaned as (
     {{ clean_string('region') }} as region,
     {{ clean_string('state') }} as state_region,
     
-    -- Geographic coordinates with validation
-    {{ safe_cast('latitude', 'double') }} as latitude,
-    {{ safe_cast('longitude', 'double') }} as longitude,
+    -- Geographic coordinates with validation (handle anomalies: impossible lat/lon values)
+    case 
+      when {{ safe_cast('latitude', 'double') }} between -90 and 90 
+      then {{ safe_cast('latitude', 'double') }}
+      else null 
+    end as latitude,
+    case 
+      when {{ safe_cast('longitude', 'double') }} between -180 and 180 
+      then {{ safe_cast('longitude', 'double') }}
+      else null 
+    end as longitude,
     
     -- Dates
     {{ safe_cast('open_dt', 'date') }} as opened_date,
@@ -62,8 +70,20 @@ cleaned as (
 
 deduped as (
   select *,
+    -- Handle duplicate store_codes by keeping latest record per store_id
     {{ dedup_latest('store_id', 'ingestion_ts') }} as rn
   from cleaned
+),
+
+-- Additional deduplication for store_codes (handle occasional duplicates)
+store_code_deduped as (
+  select *,
+    row_number() over (
+      partition by store_code 
+      order by ingestion_ts desc, store_id desc
+    ) as store_code_rn
+  from deduped
+  where rn = 1
 ),
 
 final as (
@@ -85,8 +105,8 @@ final as (
     src_filename,
     src_row_hash,
     ingestion_ts
-  from deduped
-  where rn = 1
+  from store_code_deduped
+  where store_code_rn = 1
 )
 
 select * from final

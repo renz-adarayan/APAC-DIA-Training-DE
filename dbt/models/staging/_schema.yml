@@ -13,6 +13,8 @@ models:
           - unique
           - not_null
       - name: email_normalized
+        tests:
+          - email_format
       - name: is_email_valid
         tests:
           - accepted_values:
@@ -145,6 +147,16 @@ models:
               to: ref('stg_stores')
               field: store_id
       - name: shelf_id
+      - name: temperature_celsius
+        tests:
+          - not_null
+      - name: humidity_percent
+        tests:
+          - not_null
+      - name: has_sensor_anomaly
+        tests:
+          - accepted_values:
+              values: [true, false]
 
   - name: stg_exchange_rates
     columns:
