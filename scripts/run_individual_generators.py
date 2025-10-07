@@ -158,11 +158,23 @@ def main():
         
         # Handle different function signatures
         if ds == 'orders_header':
-            # Special case: orders_header needs customer and store counts
-            row_counts = calculate_row_counts(['customers', 'stores'], args.scale)
-            num_customers = generated_counts.get('customers', row_counts.get('customers', 0))
-            num_stores = generated_counts.get('stores', row_counts.get('stores', 0))
-            result = func(schema, args.scale, out_path, num_customers, num_stores)
+            # Special case: orders_header needs customer and store CSV file paths
+            customers_file = out_root / 'customers.csv'
+            stores_file = out_root / 'stores.csv'
+            
+            # Check if dependency files exist
+            if not customers_file.exists():
+                print(f"[error] {ds} requires customers.csv to exist at {customers_file}")
+                print(f"[info] Generate customers first or use generate_data.py for integrated generation")
+                rows = 0
+                continue
+            if not stores_file.exists():
+                print(f"[error] {ds} requires stores.csv to exist at {stores_file}")
+                print(f"[info] Generate stores first or use generate_data.py for integrated generation")
+                rows = 0
+                continue
+                
+            result = func(schema, args.scale, out_path, customers_file, stores_file)
             # Handle tuple return from orders_header
             rows = result[0] if isinstance(result, tuple) else result
         elif ds == 'orders_lines':

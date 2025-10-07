@@ -94,7 +94,7 @@ def main():
     
     print("Generating orders header data...")
     orders_header_count, orders_per_date, start_date, num_orders, order_dates = generate_orders_header_data(
-        orders_header_schema, args.scale, out, results['customers'], results['stores']
+        orders_header_schema, args.scale, out, paths['customers'], paths['stores']
     )
     results['orders_header'] = orders_header_count
     

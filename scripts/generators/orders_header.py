@@ -29,16 +29,35 @@ from utils.constants import (
 )
 
 
+def _read_ids_from_csv(file_path: Path, id_column: str) -> List[int]:
+    """Read actual IDs from a CSV file.
+    
+    Args:
+        file_path: Path to the CSV file
+        id_column: Name of the ID column to read
+        
+    Returns:
+        List of actual IDs from the file
+    """
+    ids = []
+    with file_path.open('r', encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            ids.append(int(row[id_column]))
+    
+    return ids
+
+
 def generate_orders_header_data(schema: pa.Schema, scale: float, output_path: Path, 
-                               num_customers: int, num_stores: int) -> tuple[int, dict, date, int, list[date]]:
+                               customers_file_path: Path, stores_file_path: Path) -> tuple[int, dict, date, int, list[date]]:
     """Generate orders header data with daily partitioning and write to CSV files.
     
     Args:
         schema: PyArrow schema for orders_header
         scale: Scaling factor for number of records
         output_path: Base path to write the partitioned CSV files
-        num_customers: Number of customers available for foreign key references
-        num_stores: Number of stores available for foreign key references
+        customers_file_path: Path to customers CSV file to read actual customer IDs
+        stores_file_path: Path to stores CSV file to read actual store IDs
         
     Returns:
         tuple: (orders_count, orders_per_date, start_date, num_orders, order_dates)
@@ -74,9 +93,11 @@ def generate_orders_header_data(schema: pa.Schema, scale: float, output_path: Pa
         if remaining_orders <= 0:
             break
     
-    # Get valid foreign key ranges for realistic references (99%) and violations (1%)
-    valid_customer_ids = list(range(1, num_customers + 1))
-    valid_store_ids = list(range(1, num_stores + 1))
+    # Read actual customer and store IDs from generated CSV files
+    valid_customer_ids = _read_ids_from_csv(customers_file_path, 'customer_id')
+    valid_store_ids = _read_ids_from_csv(stores_file_path, 'store_id')
+    
+    print(f"Loaded {len(valid_customer_ids)} customer IDs and {len(valid_store_ids)} store IDs from CSV files")
     
     # Track order IDs for duplicate injection (0.05% exact rate)
     generated_order_ids: List[int] = []
