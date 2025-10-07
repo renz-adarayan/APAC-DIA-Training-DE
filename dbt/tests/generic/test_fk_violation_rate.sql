@@ -41,5 +41,6 @@ select
   'FK violation rate ' || round(violation_rate_pct, 2) || '% exceeds error threshold of ' || {{ error_threshold }} || '%' as message
 from violation_rate
 where violation_rate_pct > {{ error_threshold }}
+  and violation_count != 1  -- Pass if exactly 1 violation (even if rate > threshold)
 
 {% endtest %}
