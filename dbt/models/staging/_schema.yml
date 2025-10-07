@@ -14,6 +14,9 @@ models:
           - not_null
       - name: email_normalized
       - name: is_email_valid
+        tests:
+          - accepted_values:
+              values: [true, false]
       - name: latitude
       - name: longitude
 
@@ -67,6 +70,9 @@ models:
               field: store_id
       - name: channel
       - name: order_value_tier
+        tests:
+          - accepted_values:
+              values: ['high_value', 'medium_value', 'low_value']
 
   - name: stg_orders_lines
     columns:
