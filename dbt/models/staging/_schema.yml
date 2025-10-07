@@ -18,7 +18,11 @@ models:
           - accepted_values:
               values: [true, false]
       - name: latitude
+        tests:
+          - latitude_range
       - name: longitude
+        tests:
+          - longitude_range
 
   - name: stg_products
     columns:
@@ -41,7 +45,11 @@ models:
       - name: store_code
       - name: store_name
       - name: latitude
+        tests:
+          - latitude_range
       - name: longitude
+        tests:
+          - longitude_range
 
   - name: stg_suppliers
     columns:
@@ -95,6 +103,8 @@ models:
           - unique
           - not_null
       - name: line_discount_pct
+        tests:
+          - discount_percentage
       - name: unit_price
 
   - name: stg_events
