@@ -1,0 +1,117 @@
+
+version: 1
+
+models:
+  - name: stg_customers
+    columns:
+      - name: customer_id
+        tests:
+          - unique
+          - not_null
+      - name: natural_key
+        tests:
+          - unique
+          - not_null
+      - name: email_normalized
+      - name: is_email_valid
+      - name: latitude
+      - name: longitude
+
+  - name: stg_products
+    columns:
+      - name: product_id
+        tests:
+          - unique
+          - not_null
+      - name: sku
+      - name: product_name
+      - name: current_price
+      - name: category
+      - name: subcategory
+
+  - name: stg_stores
+    columns:
+      - name: store_id
+        tests:
+          - unique
+          - not_null
+      - name: store_code
+      - name: store_name
+      - name: latitude
+      - name: longitude
+
+  - name: stg_suppliers
+    columns:
+      - name: supplier_id
+        tests:
+          - unique
+          - not_null
+      - name: supplier_code
+      - name: name
+
+  - name: stg_orders_header
+    columns:
+      - name: order_id
+        tests:
+          - unique
+          - not_null
+      - name: customer_id
+      - name: store_id
+      - name: channel
+      - name: order_value_tier
+
+  - name: stg_orders_lines
+    columns:
+      - name: order_id
+        tests:
+          - not_null
+      - name: line_number
+        tests:
+          - not_null
+      - name: product_id
+      - name: order_line_business_key
+        tests:
+          - unique
+          - not_null
+      - name: line_discount_pct
+      - name: unit_price
+
+  - name: stg_events
+    columns:
+      - name: event_id
+        tests:
+          - unique
+
+  - name: stg_sensors
+    columns:
+      - name: sensor_ts_utc
+        tests:
+          - not_null
+      - name: store_id
+      - name: shelf_id
+
+  - name: stg_exchange_rates
+    columns:
+      - name: currency_code
+        tests:
+          - not_null
+      - name: rate_date
+        tests:
+          - not_null
+
+  - name: stg_shipments
+    columns:
+      - name: shipment_id
+        tests:
+          - unique
+          - not_null
+      - name: order_id
+
+  - name: stg_returns
+    columns:
+      - name: return_id
+        tests:
+          - unique
+          - not_null
+      - name: order_id
+      - name: product_id
