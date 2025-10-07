@@ -94,11 +94,21 @@ models:
           - relationships:
               to: ref('stg_customers')
               field: customer_id
+          - fk_violation_rate:
+              to: ref('stg_customers')
+              field: customer_id
+              max_violation_rate: 1.0
+              error_threshold: 1.5
       - name: store_id
         tests:
           - relationships:
               to: ref('stg_stores')
               field: store_id
+          - fk_violation_rate:
+              to: ref('stg_stores')
+              field: store_id
+              max_violation_rate: 1.0
+              error_threshold: 1.5
       - name: channel
       - name: order_value_tier
         tests:
@@ -113,6 +123,11 @@ models:
           - relationships:
               to: ref('stg_orders_header')
               field: order_id
+          - fk_violation_rate:
+              to: ref('stg_orders_header')
+              field: order_id
+              max_violation_rate: 1.0
+              error_threshold: 1.5
       - name: line_number
         tests:
           - not_null
@@ -121,6 +136,11 @@ models:
           - relationships:
               to: ref('stg_products')
               field: product_id
+          - fk_violation_rate:
+              to: ref('stg_products')
+              field: product_id
+              max_violation_rate: 1.0
+              error_threshold: 1.5
       - name: order_line_business_key
         tests:
           - unique
@@ -146,6 +166,11 @@ models:
           - relationships:
               to: ref('stg_stores')
               field: store_id
+          - fk_violation_rate:
+              to: ref('stg_stores')
+              field: store_id
+              max_violation_rate: 1.0
+              error_threshold: 1.5
       - name: shelf_id
       - name: temperature_celsius
         tests:
@@ -178,6 +203,11 @@ models:
           - relationships:
               to: ref('stg_orders_header')
               field: order_id
+          - fk_violation_rate:
+              to: ref('stg_orders_header')
+              field: order_id
+              max_violation_rate: 1.0
+              error_threshold: 1.5
 
   - name: stg_returns
     columns:
@@ -190,8 +220,18 @@ models:
           - relationships:
               to: ref('stg_orders_header')
               field: order_id
+          - fk_violation_rate:
+              to: ref('stg_orders_header')
+              field: order_id
+              max_violation_rate: 1.0
+              error_threshold: 1.5
       - name: product_id
         tests:
           - relationships:
               to: ref('stg_products')
               field: product_id
+          - fk_violation_rate:
+              to: ref('stg_products')
+              field: product_id
+              max_violation_rate: 1.0
+              error_threshold: 1.5
