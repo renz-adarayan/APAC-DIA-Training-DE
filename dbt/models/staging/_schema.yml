@@ -34,7 +34,13 @@ models:
       - name: product_name
       - name: current_price
       - name: category
+        tests:
+          - accepted_values:
+              values: ['apparel', 'beauty', 'electronics', 'home', 'sports']
       - name: subcategory
+        tests:
+          - accepted_values:
+              values: ['audio', 'decor', 'fitness', 'furniture', 'gaming', 'hair', 'kids', 'kitchen', 'laptops', 'makeup', 'mens', 'outdoor', 'phones', 'skincare', 'team', 'womens']
 
   - name: stg_stores
     columns:
@@ -50,6 +56,17 @@ models:
       - name: longitude
         tests:
           - longitude_range
+      - name: channel
+        tests:
+          - accepted_values:
+              values: ['web', 'pos']
+      - name: region
+      - name: state
+      - name: open_dt
+      - name: close_dt
+      - name: src_filename
+      - name: src_row_hash
+      - name: ingestion_ts
 
   - name: stg_suppliers
     columns:
@@ -58,6 +75,10 @@ models:
           - unique
           - not_null
       - name: supplier_code
+      - name: is_preferred
+        tests:
+          - accepted_values:
+              values: [true, false]
       - name: name
 
   - name: stg_orders_header
