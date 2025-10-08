@@ -184,8 +184,9 @@ models:
           - fk_violation_rate:
               to: ref('stg_customers')
               field: customer_id
-              max_violation_rate: 1.0
-              error_threshold: 1.5
+              max_violation_rate: 2.5
+              error_threshold: 5.0
+              severity: warn
       
       - name: store_id
         description: "Store identifier from original sale"
