@@ -1,0 +1,131 @@
+version: 2
+
+models:
+  - name: fct_sales
+    description: >
+      Sales fact table capturing detailed order line transactions.
+      Grain: One row per order line (order_id + line_number).
+      Updates incrementally based on order_ts from order headers.
+    
+    config:
+      contract:
+        enforced: false
+    
+    columns:
+      - name: sales_key
+        description: "Unique identifier for each sales record (hash of order_id + line_number)"
+        tests:
+          - unique
+          - not_null
+      
+      - name: order_id
+        description: "Order identifier from order header"
+        tests:
+          - not_null
+          - relationships:
+              to: ref('stg_orders_header')
+              field: order_id
+      
+      - name: line_number
+        description: "Line number within the order"
+        tests:
+          - not_null
+      
+      - name: customer_id
+        description: "Customer identifier"
+        tests:
+          - not_null
+          - relationships:
+              to: ref('stg_customers')
+              field: customer_id
+      
+      - name: product_id
+        description: "Product identifier"
+        tests:
+          - not_null
+          - relationships:
+              to: ref('stg_products')
+              field: product_id
+      
+      - name: store_id
+        description: "Store identifier"
+        tests:
+          - not_null
+          - relationships:
+              to: ref('stg_stores')
+              field: store_id
+      
+      - name: order_ts
+        description: "Order timestamp"
+        tests:
+          - not_null
+      
+      - name: order_date_local
+        description: "Order date in local timezone"
+        tests:
+          - not_null
+      
+      - name: quantity
+        description: "Quantity of items ordered"
+        tests:
+          - not_null
+      
+      - name: unit_price
+        description: "Unit price of the product"
+        tests:
+          - not_null
+      
+      - name: line_total_after_discount
+        description: "Line total after applying discounts"
+        tests:
+          - not_null
+      
+      - name: line_discount_pct
+        description: "Line discount percentage"
+      
+      - name: channel
+        description: "Sales channel"
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Online', 'In-Store', 'Mobile', 'Phone']
+      
+      - name: payment_method
+        description: "Payment method used"
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Credit Card', 'Debit Card', 'Cash', 'PayPal', 'Bank Transfer', 'Gift Card']
+      
+      - name: currency
+        description: "Currency code"
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['AUD', 'USD', 'EUR', 'GBP', 'JPY', 'CAD']
+      
+      - name: discount_flag
+        description: "Flag indicating if discount was applied"
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Discounted', 'Full Price']
+      
+      - name: quantity_tier
+        description: "Categorization of order quantity"
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Single Item', 'Small Quantity', 'Medium Quantity', 'Bulk Order']
+      
+      - name: day_type
+        description: "Weekend or weekday classification"
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Weekend', 'Weekday']
+
+    tests:
+      # Test that order_id + line_number combination is unique
+      - unique:
+          column_name: "order_id || '-' || line_number"
