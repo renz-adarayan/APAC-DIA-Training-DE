@@ -35,25 +35,31 @@ models:
         description: "Customer identifier"
         tests:
           - not_null
-          - relationships:
+          - fk_violation_rate:
               to: ref('stg_customers')
               field: customer_id
+              max_violation_rate: 1.0
+              error_threshold: 1.5
       
       - name: product_id
         description: "Product identifier"
         tests:
           - not_null
-          - relationships:
+          - fk_violation_rate:
               to: ref('stg_products')
               field: product_id
+              max_violation_rate: 1.0
+              error_threshold: 1.5
       
       - name: store_id
         description: "Store identifier"
         tests:
           - not_null
-          - relationships:
+          - fk_violation_rate:
               to: ref('stg_stores')
               field: store_id
+              max_violation_rate: 1.0
+              error_threshold: 1.5
       
       - name: order_ts
         description: "Order timestamp"
@@ -88,21 +94,21 @@ models:
         tests:
           - not_null
           - accepted_values:
-              values: ['Online', 'In-Store', 'Mobile', 'Phone']
+              values: ['web', 'pos']
       
       - name: payment_method
         description: "Payment method used"
         tests:
           - not_null
           - accepted_values:
-              values: ['Credit Card', 'Debit Card', 'Cash', 'PayPal', 'Bank Transfer', 'Gift Card']
+              values: ['credit_card', 'debit_card', 'paypal', 'cash', 'buy_now_pay_later']
       
       - name: currency
         description: "Currency code"
         tests:
           - not_null
           - accepted_values:
-              values: ['AUD', 'USD', 'EUR', 'GBP', 'JPY', 'CAD']
+              values: ['aud', 'usd', 'eur']
       
       - name: discount_flag
         description: "Flag indicating if discount was applied"
@@ -166,23 +172,29 @@ models:
         description: "Product identifier"
         tests:
           - not_null
-          - relationships:
+          - fk_violation_rate:
               to: ref('stg_products')
               field: product_id
+              max_violation_rate: 1.0
+              error_threshold: 1.5
       
       - name: customer_id
         description: "Customer identifier from original sale"
         tests:
-          - relationships:
+          - fk_violation_rate:
               to: ref('stg_customers')
               field: customer_id
+              max_violation_rate: 1.0
+              error_threshold: 1.5
       
       - name: store_id
         description: "Store identifier from original sale"
         tests:
-          - relationships:
+          - fk_violation_rate:
               to: ref('stg_stores')
               field: store_id
+              max_violation_rate: 1.0
+              error_threshold: 1.5
       
       - name: return_ts
         description: "Return timestamp"

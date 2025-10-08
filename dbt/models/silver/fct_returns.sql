@@ -16,6 +16,7 @@ with returns_base as (
 ),
 
 -- Get original order and sales information for context
+-- Aggregate when same product appears on multiple lines in same order
 sales_context as (
   select
     ol.order_id,
@@ -27,12 +28,23 @@ sales_context as (
     oh.channel,
     oh.payment_method,
     oh.currency,
-    ol.unit_price,
-    ol.quantity,
-    ol.line_total_after_discount
+    -- Aggregate metrics when product appears on multiple lines
+    avg(ol.unit_price) as unit_price,
+    sum(ol.quantity) as quantity,
+    sum(ol.line_total_after_discount) as line_total_after_discount
   from {{ ref('stg_orders_lines') }} ol
   inner join {{ ref('stg_orders_header') }} oh
     on ol.order_id = oh.order_id
+  group by 
+    ol.order_id,
+    ol.product_id,
+    oh.customer_id,
+    oh.store_id,
+    oh.order_ts_utc,
+    oh.order_date_local,
+    oh.channel,
+    oh.payment_method,
+    oh.currency
 ),
 
 enriched as (
