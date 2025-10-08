@@ -129,3 +129,132 @@ models:
       # Test that order_id + line_number combination is unique
       - unique:
           column_name: "order_id || '-' || line_number"
+
+  - name: fct_returns
+    description: >
+      Returns fact table capturing detailed product return transactions.
+      Grain: One row per returned item (return_id).
+      Updates incrementally based on return_ts_utc from returns data.
+      Enriched with original sales context and business metrics.
+    
+    config:
+      contract:
+        enforced: false
+    
+    columns:
+      - name: return_key
+        description: "Unique identifier for each return record (hash of return_id)"
+        tests:
+          - unique
+          - not_null
+      
+      - name: return_id
+        description: "Return identifier from returns system"
+        tests:
+          - unique
+          - not_null
+      
+      - name: order_id
+        description: "Original order identifier"
+        tests:
+          - not_null
+          - relationships:
+              to: ref('stg_orders_header')
+              field: order_id
+      
+      - name: product_id
+        description: "Product identifier"
+        tests:
+          - not_null
+          - relationships:
+              to: ref('stg_products')
+              field: product_id
+      
+      - name: customer_id
+        description: "Customer identifier from original sale"
+        tests:
+          - relationships:
+              to: ref('stg_customers')
+              field: customer_id
+      
+      - name: store_id
+        description: "Store identifier from original sale"
+        tests:
+          - relationships:
+              to: ref('stg_stores')
+              field: store_id
+      
+      - name: return_ts
+        description: "Return timestamp"
+        tests:
+          - not_null
+      
+      - name: return_date
+        description: "Return date"
+        tests:
+          - not_null
+      
+      - name: quantity_returned
+        description: "Quantity of items returned"
+        tests:
+          - not_null
+      
+      - name: reason
+        description: "Return reason description"
+        tests:
+          - not_null
+      
+      - name: return_category
+        description: "Categorized return reason"
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Product Defect', 'Size/Fit Issue', 'Not as Expected', 'Changed Mind', 'Duplicate Order', 'Other']
+      
+      - name: return_completeness
+        description: "Whether return is full, partial, or over"
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Full Return', 'Partial Return', 'Over Return', 'Unknown Completeness']
+      
+      - name: return_timing_category
+        description: "Categorization based on days between order and return"
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Quick Return (≤7 days)', 'Standard Return (8-30 days)', 'Late Return (31-90 days)', 'Very Late Return (>90 days)', 'Unknown Timing']
+      
+      - name: return_day_type
+        description: "Weekend or weekday classification"
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Weekend', 'Weekday']
+      
+      - name: return_value_tier
+        description: "Value tier based on return amount"
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['High Value Return', 'Medium Value Return', 'Low Value Return']
+      
+      - name: days_to_return
+        description: "Number of days between order and return"
+      
+      - name: return_percentage
+        description: "Percentage of original quantity returned"
+      
+      - name: is_quality_issue
+        description: "Flag indicating if return is due to product quality"
+        tests:
+          - not_null
+          - accepted_values:
+              values: [true, false]
+      
+      - name: is_immediate_return
+        description: "Flag indicating if return happened within 1 day"
+        tests:
+          - not_null
+          - accepted_values:
+              values: [true, false]
