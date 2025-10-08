@@ -439,8 +439,17 @@ def load_sensors(raw_root, lake_root, conn, dry_run=False):
     print("Sensors: All partitions already processed")
 
 
-def load_orders_header(raw_root, lake_root, conn, dry_run=False, cutoff_date: Optional[dt.date]=None):
-    """Wrapper to load orders header CSV files with incremental partition processing."""
+def load_orders_header(raw_root, lake_root, conn, dry_run=False, cutoff_date: Optional[dt.date]=None, initial: bool=False):
+    """Wrapper to load orders header CSV files with incremental partition processing.
+    
+    Args:
+        raw_root: Root path for raw data
+        lake_root: Root path for lake storage
+        conn: Database connection
+        dry_run: Whether to perform a dry run
+        cutoff_date: Optional cutoff date for pruning old partitions
+        initial: If True, process all unprocessed partitions. If False, process only the latest unprocessed partition.
+    """
     orders_base = raw_root / 'orders'
     
     if not orders_base.is_dir():
@@ -466,7 +475,8 @@ def load_orders_header(raw_root, lake_root, conn, dry_run=False, cutoff_date: Op
     
     print(f"Orders Header: Found {len(partitions)} partitions, scanning for unprocessed data...")
     
-    # Process the latest unprocessed partition
+    processed_count = 0
+    # Process partitions based on initial flag
     for partition_dir in partitions:
         # Look for orders_header.csv file in this partition
         header_file = partition_dir / 'orders_header.csv'
@@ -489,13 +499,30 @@ def load_orders_header(raw_root, lake_root, conn, dry_run=False, cutoff_date: Op
             conn=conn,
             dry_run=dry_run,
         )
-        return
+        processed_count += 1
+        
+        # If not initial load, process only one partition (incremental mode)
+        if not initial:
+            break
     
-    print("Orders Header: All partitions already processed")
+    if processed_count == 0:
+        print("Orders Header: All partitions already processed")
+    else:
+        mode = "initial" if initial else "incremental"
+        print(f"Orders Header: Processed {processed_count} partitions ({mode} mode)")
 
 
-def load_orders_lines(raw_root, lake_root, conn, dry_run=False, cutoff_date: Optional[dt.date]=None):
-    """Wrapper to load orders lines CSV files with incremental partition processing."""
+def load_orders_lines(raw_root, lake_root, conn, dry_run=False, cutoff_date: Optional[dt.date]=None, initial: bool=False):
+    """Wrapper to load orders lines CSV files with incremental partition processing.
+    
+    Args:
+        raw_root: Root path for raw data
+        lake_root: Root path for lake storage
+        conn: Database connection
+        dry_run: Whether to perform a dry run
+        cutoff_date: Optional cutoff date for pruning old partitions
+        initial: If True, process all unprocessed partitions. If False, process only the latest unprocessed partition.
+    """
     orders_base = raw_root / 'orders'
     
     if not orders_base.is_dir():
@@ -521,7 +548,8 @@ def load_orders_lines(raw_root, lake_root, conn, dry_run=False, cutoff_date: Opt
     
     print(f"Orders Lines: Found {len(partitions)} partitions, scanning for unprocessed data...")
     
-    # Process the latest unprocessed partition
+    processed_count = 0
+    # Process partitions based on initial flag
     for partition_dir in partitions:
         # Look for orders_lines.csv file in this partition
         lines_file = partition_dir / 'orders_lines.csv'
@@ -544,9 +572,17 @@ def load_orders_lines(raw_root, lake_root, conn, dry_run=False, cutoff_date: Opt
             conn=conn,
             dry_run=dry_run,
         )
-        return
+        processed_count += 1
+        
+        # If not initial load, process only one partition (incremental mode)
+        if not initial:
+            break
     
-    print("Orders Lines: All partitions already processed")
+    if processed_count == 0:
+        print("Orders Lines: All partitions already processed")
+    else:
+        mode = "initial" if initial else "incremental"
+        print(f"Orders Lines: Processed {processed_count} partitions ({mode} mode)")
 
 
 __all__ = [

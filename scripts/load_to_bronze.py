@@ -74,8 +74,8 @@ def main():
         ("exchange_rates", load_exchange_rates),
         ("events", load_events, cutoff_date, args.initial, args.batch_size_days),
         ("sensors", load_sensors),
-        ("orders_header", load_orders_header, cutoff_date),
-        ("orders_lines", load_orders_lines, cutoff_date),
+        ("orders_header", load_orders_header, cutoff_date, args.initial),
+        ("orders_lines", load_orders_lines, cutoff_date, args.initial),
         ("shipments", load_shipments),
         ("returns", load_returns)
     ]:
