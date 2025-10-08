@@ -84,7 +84,7 @@ cleaned as (
 
 deduped as (
   select *,
-    {{ dedup_latest('natural_key', 'ingestion_ts') }} as rn
+    {{ dedup_latest('customer_id', 'ingestion_ts') }} as rn
   from cleaned
 ),
 

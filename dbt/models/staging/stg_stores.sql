@@ -70,20 +70,9 @@ cleaned as (
 
 deduped as (
   select *,
-    -- Handle duplicate store_codes by keeping latest record per store_id
+    -- Handle duplicate store_ids by keeping latest record per store_id
     {{ dedup_latest('store_id', 'ingestion_ts') }} as rn
   from cleaned
-),
-
--- Additional deduplication for store_codes (handle occasional duplicates)
-store_code_deduped as (
-  select *,
-    row_number() over (
-      partition by store_code 
-      order by ingestion_ts desc, store_id desc
-    ) as store_code_rn
-  from deduped
-  where rn = 1
 ),
 
 final as (
@@ -105,8 +94,8 @@ final as (
     src_filename,
     src_row_hash,
     ingestion_ts
-  from store_code_deduped
-  where store_code_rn = 1
+  from deduped
+  where rn = 1
 )
 
 select * from final

@@ -99,6 +99,58 @@ def generate_orders_header_data(schema: pa.Schema, scale: float, output_path: Pa
     
     print(f"Loaded {len(valid_customer_ids)} customer IDs and {len(valid_store_ids)} store IDs from CSV files")
     
+    # Pre-calculate FK violations for exactly 1% across entire dataset
+    total_customer_violations = max(1, int(num_orders * 0.01))  # Exactly 1% of total orders
+    total_store_violations = max(1, int(num_orders * 0.01))     # Exactly 1% of total orders
+    
+    # Distribute violations across days proportionally
+    customer_violations_per_date = {}
+    store_violations_per_date = {}
+    remaining_customer_violations = total_customer_violations
+    remaining_store_violations = total_store_violations
+    
+    for order_date in order_dates:
+        if order_date not in orders_per_date or orders_per_date[order_date] == 0:
+            customer_violations_per_date[order_date] = 0
+            store_violations_per_date[order_date] = 0
+            continue
+            
+        # Proportional allocation based on daily order count
+        daily_orders = orders_per_date[order_date]
+        proportion = daily_orders / num_orders
+        
+        # Customer violations for this day
+        daily_customer_violations = int(total_customer_violations * proportion)
+        if remaining_customer_violations > 0:
+            daily_customer_violations = min(daily_customer_violations, remaining_customer_violations)
+            customer_violations_per_date[order_date] = daily_customer_violations
+            remaining_customer_violations -= daily_customer_violations
+        else:
+            customer_violations_per_date[order_date] = 0
+            
+        # Store violations for this day  
+        daily_store_violations = int(total_store_violations * proportion)
+        if remaining_store_violations > 0:
+            daily_store_violations = min(daily_store_violations, remaining_store_violations)
+            store_violations_per_date[order_date] = daily_store_violations
+            remaining_store_violations -= daily_store_violations
+        else:
+            store_violations_per_date[order_date] = 0
+    
+    # Distribute any remaining violations to days with orders
+    order_dates_with_orders = [d for d in order_dates if orders_per_date.get(d, 0) > 0]
+    while remaining_customer_violations > 0 and order_dates_with_orders:
+        date_to_add = random.choice(order_dates_with_orders)
+        customer_violations_per_date[date_to_add] += 1
+        remaining_customer_violations -= 1
+        
+    while remaining_store_violations > 0 and order_dates_with_orders:
+        date_to_add = random.choice(order_dates_with_orders)
+        store_violations_per_date[date_to_add] += 1
+        remaining_store_violations -= 1
+    
+    print(f"Planned FK violations: {total_customer_violations} customer violations, {total_store_violations} store violations across {len(order_dates)} days")
+    
     # Track order IDs for duplicate injection (0.05% exact rate)
     generated_order_ids: List[int] = []
     duplicate_injected_keys: List[int] = []  # records each duplicate occurrence
@@ -120,13 +172,31 @@ def generate_orders_header_data(schema: pa.Schema, scale: float, output_path: Pa
         ensure_dir(partition_path)
         orders_header_file = partition_path / 'orders_header.csv'
         
-        # Generate foreign keys with controlled violations
+        # Generate foreign keys with controlled violations using pre-calculated amounts
         daily_customer_ids = [random.choice(valid_customer_ids) for _ in range(daily_orders)]
         daily_store_ids = [random.choice(valid_store_ids) for _ in range(daily_orders)]
         
-        # Inject 1% foreign key violations
-        daily_customer_ids = inject_foreign_key_violations(daily_customer_ids, 0.01)
-        daily_store_ids = inject_foreign_key_violations(daily_store_ids, 0.01)
+        # Apply exact number of violations for this day (instead of percentage-based)
+        daily_customer_violations = customer_violations_per_date.get(order_date, 0)
+        daily_store_violations = store_violations_per_date.get(order_date, 0)
+        
+        # Inject exact number of customer violations for this day
+        if daily_customer_violations > 0:
+            violation_indices = random.sample(range(len(daily_customer_ids)), 
+                                            min(daily_customer_violations, len(daily_customer_ids)))
+            max_customer_id = max(valid_customer_ids)
+            for idx in violation_indices:
+                # Generate invalid customer ID above the valid range
+                daily_customer_ids[idx] = random.randint(max_customer_id + 1, 999999)
+        
+        # Inject exact number of store violations for this day  
+        if daily_store_violations > 0:
+            violation_indices = random.sample(range(len(daily_store_ids)), 
+                                            min(daily_store_violations, len(daily_store_ids)))
+            max_store_id = max(valid_store_ids)
+            for idx in violation_indices:
+                # Generate invalid store ID above the valid range
+                daily_store_ids[idx] = random.randint(max_store_id + 1, 999999)
         
         with orders_header_file.open('w', encoding='utf-8', newline='') as f:
             writer = csv.writer(f, quoting=csv.QUOTE_MINIMAL)
@@ -212,5 +282,15 @@ def generate_orders_header_data(schema: pa.Schema, scale: float, output_path: Pa
         )
     else:
         print("Summary: No duplicate order_ids were injected (unexpected).")
+    
+    # FK violations summary
+    total_planned_customer_violations = sum(customer_violations_per_date.values())
+    total_planned_store_violations = sum(store_violations_per_date.values())
+    customer_violation_pct = (total_planned_customer_violations / total_orders_generated) * 100
+    store_violation_pct = (total_planned_store_violations / total_orders_generated) * 100
+    
+    print(f"FK Violations Summary:")
+    print(f"  Customer violations: {total_planned_customer_violations} ({customer_violation_pct:.2f}%)")
+    print(f"  Store violations: {total_planned_store_violations} ({store_violation_pct:.2f}%)")
 
     return total_orders_generated, orders_per_date, start_date, num_orders, order_dates
