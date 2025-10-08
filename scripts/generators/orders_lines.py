@@ -7,25 +7,72 @@ from decimal import Decimal
 from typing import Dict, List
 import pyarrow as pa
 
-from utils.data_utils import apply_scale_to_targets, create_partitioned_path, ensure_dir
+from utils.data_utils import apply_scale_to_targets, create_partitioned_path, ensure_dir, inject_foreign_key_violations
 from utils.schema_utils import get_column_names
 from utils.constants import TARGET_ROWS, TAX_RATES
 
 
+def _read_order_ids_from_partition(partition_path: Path) -> List[int]:
+    """Read actual order IDs from a partition's orders_header.csv file.
+    
+    Args:
+        partition_path: Path to the partition directory
+        
+    Returns:
+        List of actual order IDs from the partition
+    """
+    order_ids = []
+    orders_header_file = partition_path / 'orders_header.csv'
+    
+    if not orders_header_file.exists():
+        return order_ids
+        
+    with orders_header_file.open('r', encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            order_ids.append(int(row['order_id']))
+    
+    return order_ids
+
+
+def _read_product_ids_from_csv(file_path: Path) -> List[int]:
+    """Read actual product IDs from the products CSV file.
+    
+    Args:
+        file_path: Path to the products CSV file
+        
+    Returns:
+        List of actual product IDs from the file
+    """
+    product_ids = []
+    with file_path.open('r', encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            product_ids.append(int(row['product_id']))
+    
+    return product_ids
+
+
 def generate_orders_lines_data(schema: pa.Schema, scale: float, output_path: Path, 
                              orders_per_date: Dict[date, int], num_products: int, 
-                             start_date: date, num_orders: int, order_dates: List[date]) -> int:
+                             start_date: date, num_orders: int, order_dates: List[date],
+                             products_file_path: Path) -> int:
     """Generate orders lines data and write to partitioned CSV files.
+    
+    This function reads the actual order_ids from each partition's orders_header.csv file
+    and actual product_ids from the products.csv file to ensure referential integrity. 
+    It properly handles duplicate order_ids that were injected in the header generation process.
     
     Args:
         schema: PyArrow schema for orders_lines
         scale: Scaling factor for number of records
         output_path: Path to write the CSV files
         orders_per_date: Dictionary mapping order dates to number of orders
-        num_products: Total number of products for foreign key references
+        num_products: Total number of products for foreign key references (legacy parameter)
         start_date: Start date for order generation
         num_orders: Total number of orders
         order_dates: List of order dates for partitioning
+        products_file_path: Path to products CSV file to read actual product IDs
         
     Returns:
         Total number of lines generated
@@ -34,11 +81,27 @@ def generate_orders_lines_data(schema: pa.Schema, scale: float, output_path: Pat
     num_lines_target = apply_scale_to_targets(TARGET_ROWS['orders_lines'], scale)
     orders_lines_columns = get_column_names(schema)
     
-    # Valid product IDs for foreign key references and violations
-    valid_product_ids = list(range(1, num_products + 1))
+    # Read actual product IDs from the products CSV file
+    valid_product_ids = _read_product_ids_from_csv(products_file_path)
     
-    # Track total lines generated
+    if not valid_product_ids:
+        raise ValueError(f"No product IDs found in {products_file_path}")
+    
+    print(f"Loaded {len(valid_product_ids)} product IDs from {products_file_path}")
+    
+    # Pre-generate all product IDs needed for this generation run
+    # Calculate total lines needed to pre-generate the right amount of product IDs
+    estimated_lines = min(num_lines_target, int(sum(orders_per_date.values()) * 3.5))
+    
+    # Generate product IDs for all lines (mostly valid, with 1% violations)
+    all_product_ids = [random.choice(valid_product_ids) for _ in range(estimated_lines)]
+    all_product_ids_with_violations = inject_foreign_key_violations(all_product_ids, 0.01)
+    
+    print(f"Pre-generated {len(all_product_ids_with_violations)} product IDs with ~1% violations")
+    
+    # Track total lines generated and product ID index
     total_lines_generated = 0
+    product_id_index = 0
     
     # Lines per order distribution (weighted toward 2-4 lines, but allowing 1-8)
     lines_per_order_weights = [0.1, 0.25, 0.25, 0.2, 0.1, 0.05, 0.03, 0.02]  # 1-8 lines
@@ -53,10 +116,19 @@ def generate_orders_lines_data(schema: pa.Schema, scale: float, output_path: Pat
         ensure_dir(partition_path)
         orders_lines_file = partition_path / 'orders_lines.csv'
         
+        # Read actual order IDs from the corresponding orders_header.csv file
+        actual_order_ids = _read_order_ids_from_partition(partition_path)
+        
+        if not actual_order_ids:
+            print(f"Warning: No order IDs found for partition {order_date}, skipping lines generation")
+            continue
+        
+        print(f"Generating lines for {len(actual_order_ids)} orders in partition {order_date}")
+        
         # Calculate how many lines to generate for this partition
         # Target ~3.5 lines per order but respect overall target
         partition_lines_target = min(
-            int(daily_orders * 3.5),
+            int(len(actual_order_ids) * 3.5),
             num_lines_target - total_lines_generated
         )
         
@@ -68,9 +140,9 @@ def generate_orders_lines_data(schema: pa.Schema, scale: float, output_path: Pat
             writer.writerow(orders_lines_columns)
             
             lines_written = 0
-            current_order_id = ((order_date - start_date).days * max(1, int(num_orders / len(order_dates)))) + 1
             
-            for order_idx in range(daily_orders):
+            # Generate lines for each actual order ID from the header file
+            for actual_order_id in actual_order_ids:
                 if lines_written >= partition_lines_target:
                     break
                     
@@ -81,11 +153,13 @@ def generate_orders_lines_data(schema: pa.Schema, scale: float, output_path: Pat
                 num_lines = min(num_lines, partition_lines_target - lines_written)
                 
                 for line_num in range(1, num_lines + 1):
-                    # Generate product_id with 1% foreign key violations
-                    product_id = random.choice(valid_product_ids)
-                    if random.random() < 0.01:
-                        # Foreign key violation: invalid product_id
-                        product_id = random.randint(max(valid_product_ids) + 1, 999999)
+                    # Use pre-generated product_id with controlled violations
+                    if product_id_index < len(all_product_ids_with_violations):
+                        product_id = all_product_ids_with_violations[product_id_index]
+                        product_id_index += 1
+                    else:
+                        # Fallback to random selection if we run out (shouldn't happen with proper estimation)
+                        product_id = random.choice(valid_product_ids)
                     
                     # Quantity distribution: mostly 1-3, occasionally higher
                     if random.random() < 0.001:  # 0.1% negative quantity anomaly
@@ -118,20 +192,18 @@ def generate_orders_lines_data(schema: pa.Schema, scale: float, output_path: Pat
                     
                     # Write row using CSV writer for proper escaping
                     writer.writerow([
-                        current_order_id,       # order_id
-                        line_num,               # line_number
-                        product_id,             # product_id
-                        qty,                    # qty
-                        f"{unit_price:.4f}",    # unit_price
-                        f"{line_discount_pct:.4f}",  # line_discount_pct
-                        f"{tax_pct:.4f}"        # tax_pct
+                        actual_order_id,            # order_id - use actual order ID from header
+                        line_num,                   # line_number
+                        product_id,                 # product_id
+                        qty,                        # qty
+                        f"{unit_price:.4f}",        # unit_price
+                        f"{line_discount_pct:.4f}", # line_discount_pct
+                        f"{tax_pct:.4f}"           # tax_pct
                     ])
                     
                     lines_written += 1
                     if lines_written >= partition_lines_target:
                         break
-                
-                current_order_id += 1
         
         total_lines_generated += lines_written
         

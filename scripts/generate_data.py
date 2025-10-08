@@ -107,7 +107,8 @@ def main():
         results['products'], 
         start_date, 
         num_orders, 
-        order_dates
+        order_dates,
+        paths['products']
     )
     results['orders_lines'] = orders_lines_count
 
@@ -124,7 +125,11 @@ def main():
     results['shipments'] = generate_shipments_data(shipments_schema, args.scale, paths['shipments'], results['orders_header'])
 
     print("Generating returns data...")
-    results['returns'] = generate_returns_data(returns_day1_schema, args.scale, paths['returns'], results['orders_header'])
+    # Pass orders root directory and products CSV path for actual FK references
+    orders_root_path = out / 'orders'  # Orders are generated to out/orders/<partitions>
+    products_csv_path = paths['products']
+    results['returns'] = generate_returns_data(returns_day1_schema, args.scale, paths['returns'], 
+                                              orders_root_path=orders_root_path, products_csv_path=products_csv_path)
 
     print(f"Generated data summary:")
     for dataset, count in results.items():

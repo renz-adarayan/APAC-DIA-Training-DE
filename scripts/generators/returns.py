@@ -1,5 +1,6 @@
 """Returns data generator module with Delta Lake format and schema evolution."""
 import random
+import csv
 from datetime import datetime, timedelta
 from pathlib import Path
 from faker import Faker
@@ -11,20 +12,126 @@ from utils.data_utils import apply_scale_to_targets
 from utils.constants import TARGET_ROWS
 
 
-def generate_returns_data(schema: pa.Schema, scale: float, output_path: Path, orders_count: int) -> int:
+def _get_actual_order_product_combinations(orders_root_path: Path, products_csv_path: Path) -> list[tuple[int, int, datetime]]:
+    """Get actual order_id and product_id combinations from CSV files.
+    
+    Args:
+        orders_root_path: Path to the orders directory with partitioned data
+        products_csv_path: Path to the products CSV file
+        
+    Returns:
+        List of tuples containing (order_id, product_id, order_timestamp)
+    """
+    # Read all available product IDs
+    product_ids = []
+    if products_csv_path.exists():
+        with products_csv_path.open('r', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                product_ids.append(int(row['product_id']))
+    
+    if not product_ids:
+        raise ValueError(f"No product IDs found in {products_csv_path}")
+    
+    # Read order IDs and timestamps from orders partitions
+    order_data = []
+    
+    # Look for order partitions in the orders directory
+    if orders_root_path.exists():
+        for partition_dir in orders_root_path.iterdir():
+            if partition_dir.is_dir() and partition_dir.name.startswith('order_dt='):
+                orders_header_file = partition_dir / 'orders_header.csv'
+                orders_lines_file = partition_dir / 'orders_lines.csv'
+                
+                if orders_header_file.exists() and orders_lines_file.exists():
+                    # Read orders header to get order_id and timestamp
+                    order_timestamps = {}
+                    with orders_header_file.open('r', encoding='utf-8') as f:
+                        reader = csv.DictReader(f)
+                        for row in reader:
+                            order_id = int(row['order_id'])
+                            order_ts_str = row['order_ts']
+                            # Parse timestamp (remove timezone for simplicity)
+                            order_ts = datetime.fromisoformat(order_ts_str.replace('Z', '').replace('+08:00', ''))
+                            order_timestamps[order_id] = order_ts
+                    
+                    # Read orders lines to get order_id and product_id combinations
+                    with orders_lines_file.open('r', encoding='utf-8') as f:
+                        reader = csv.DictReader(f)
+                        for row in reader:
+                            order_id = int(row['order_id'])
+                            product_id = int(row['product_id'])
+                            
+                            if order_id in order_timestamps:
+                                order_data.append((order_id, product_id, order_timestamps[order_id]))
+    
+    if not order_data:
+        # Fallback: create combinations from available data
+        print("No order-product combinations found in partitioned data. Creating fallback combinations...")
+        # Read from a sample orders file if available
+        sample_orders_path = orders_root_path / "order_dt=2024-01-01" / "orders_header.csv"
+        if sample_orders_path.exists():
+            with sample_orders_path.open('r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    order_id = int(row['order_id'])
+                    order_ts_str = row['order_ts']
+                    order_ts = datetime.fromisoformat(order_ts_str.replace('Z', '').replace('+08:00', ''))
+                    
+                    # Each order gets 1-3 random products
+                    num_products = random.randint(1, min(3, len(product_ids)))
+                    selected_products = random.sample(product_ids, num_products)
+                    
+                    for product_id in selected_products:
+                        order_data.append((order_id, product_id, order_ts))
+    
+    return order_data
+
+
+def generate_returns_data(schema: pa.Schema, scale: float, output_path: Path, 
+                         orders_root_path: Path = None, products_csv_path: Path = None) -> int:
     """Generate returns data with Delta Lake format and schema evolution.
+    
+    Uses actual order_id and product_id combinations from CSV files
+    to ensure referential integrity with existing orders and products data.
     
     Args:
         schema: PyArrow schema for returns (day1 schema)
         scale: Scaling factor for number of records
         output_path: Path to write the Delta table
-        orders_count: Number of orders available for returns (for FK references)
+        orders_root_path: Path to the orders directory with partitioned data
+        products_csv_path: Path to products CSV file
     
     Returns:
         Number of returns generated
     """
     fake = Faker('en_AU')
+    
+    # Set default paths if not provided
+    if orders_root_path is None:
+        orders_root_path = Path("data_raw/orders")
+    if products_csv_path is None:
+        products_csv_path = Path("data_raw/products.csv")
+    
+    # Get actual order-product combinations from CSV files
+    print("Loading actual order-product combinations from CSV files...")
+    try:
+        order_product_combinations = _get_actual_order_product_combinations(orders_root_path, products_csv_path)
+        print(f"Loaded {len(order_product_combinations)} order-product combinations from CSV files")
+    except Exception as e:
+        print(f"Failed to load from CSV files: {e}")
+        raise ValueError("Could not load order-product combinations from CSV files")
+    
+    if not order_product_combinations:
+        raise ValueError("No order-product combinations available. Cannot generate returns.")
+    
+    # Calculate number of returns (should be smaller than available combinations)
     num_returns = apply_scale_to_targets(TARGET_ROWS['returns'], scale)
+    max_possible_returns = len(order_product_combinations)
+    
+    if num_returns > max_possible_returns:
+        print(f"Warning: Requested {num_returns} returns but only {max_possible_returns} order-product combinations available")
+        num_returns = max_possible_returns
     
     # Return reasons based on common retail scenarios
     return_reasons = [
@@ -37,9 +144,12 @@ def generate_returns_data(schema: pa.Schema, scale: float, output_path: Path, or
     returns_data = []
     used_return_ids = set()
     
-    print(f"Generating {num_returns:,} returns records...")
+    print(f"Generating {num_returns:,} returns records from actual order-product combinations...")
     
-    for i in range(1, num_returns + 1):
+    # Randomly sample from available order-product combinations
+    selected_combinations = random.sample(order_product_combinations, num_returns)
+    
+    for i, (order_id, product_id, order_ts) in enumerate(selected_combinations, 1):
         # Ensure unique return_id (with some potential duplicates for anomalies)
         if random.random() < 0.0005:  # 0.05% duplicate return_ids
             if used_return_ids:
@@ -51,28 +161,13 @@ def generate_returns_data(schema: pa.Schema, scale: float, output_path: Path, or
             
         used_return_ids.add(return_id)
         
-        # Foreign key to orders - mostly valid with 1% violations
-        if random.random() < 0.01:
-            # Invalid order_id (anomaly)
-            order_id = random.randint(orders_count + 1, orders_count + 10000)
-        else:
-            # Valid order_id
-            order_id = random.randint(1, orders_count)
+        # Use actual order_id and product_id from the combination
+        # Note: These are now guaranteed to be valid foreign keys
         
-        # Product ID - assume we have up to 25k products with 1% violations
-        if random.random() < 0.01:
-            # Invalid product_id (anomaly)
-            product_id = random.randint(25001, 35000)
-        else:
-            # Valid product_id
-            product_id = random.randint(1, 25000)
-        
-        # Return timestamp - mostly recent returns with some spread
-        # Assuming returns happen within 30 days of order (per business rules)
-        base_date = datetime(2024, 1, 1)
-        days_offset = random.randint(0, 400)  # Spread across 2024
-        return_hours_offset = random.randint(0, 719)  # Up to 30 days after order
-        return_ts = base_date + timedelta(days=days_offset, hours=return_hours_offset)
+        # Return timestamp - returns happen within 30 days of order (business rule)
+        days_after_order = random.randint(1, 30)
+        hours_after_order = random.randint(0, 23)
+        return_ts = order_ts + timedelta(days=days_after_order, hours=hours_after_order)
         
         # Return quantity - usually 1-3 items
         if random.random() < 0.005:  # 0.5% anomaly - negative qty
@@ -147,22 +242,28 @@ def generate_returns_data(schema: pa.Schema, scale: float, output_path: Path, or
     evolution_count = max(1, int(num_returns * 0.05))  # 5% new records for evolution demo
     evolution_data = []
     
-    for i in range(evolution_count):
+    # Use additional combinations for evolution data
+    if len(order_product_combinations) > num_returns:
+        remaining_combinations = order_product_combinations[num_returns:num_returns + evolution_count]
+    else:
+        # Reuse some combinations if we don't have enough
+        remaining_combinations = random.sample(order_product_combinations, min(evolution_count, len(order_product_combinations)))
+    
+    for i, (order_id, product_id, order_ts) in enumerate(remaining_combinations):
         new_return_id = num_returns + i + 1
         
         # Generate new return with v2 schema
-        base_date = datetime(2024, 6, 1)  # Later time period for evolution
-        days_offset = random.randint(0, 180)
-        return_hours_offset = random.randint(0, 719)
-        return_ts = base_date + timedelta(days=days_offset, hours=return_hours_offset)
+        # Return timestamp later than the original order
+        days_after_order = random.randint(31, 60)  # Later returns for evolution demo
+        return_ts = order_ts + timedelta(days=days_after_order, hours=random.randint(0, 23))
         
         reason = random.choice(return_reasons)
         return_reason_code = reason_codes[reason]
         
         evolution_data.append({
             'return_id': new_return_id,
-            'order_id': random.randint(1, orders_count),
-            'product_id': random.randint(1, 25000),
+            'order_id': order_id,
+            'product_id': product_id,
             'return_ts': return_ts,
             'qty': random.randint(1, 3),
             'reason': reason,
@@ -199,18 +300,21 @@ def generate_returns_data(schema: pa.Schema, scale: float, output_path: Path, or
     upsert_count = max(1, int(num_returns * 0.01))  # 1% of returns get updates
     upsert_data = []
     
-    for _ in range(upsert_count):
+    # Use some existing combinations for upsert operations
+    upsert_combinations = random.sample(order_product_combinations, min(upsert_count, len(order_product_combinations)))
+    
+    for i, (order_id, product_id, order_ts) in enumerate(upsert_combinations):
         existing_return_id = random.choice(list(used_return_ids))
         # Create updated record with newer timestamp
-        updated_return_ts = datetime(2024, 8, 1) + timedelta(days=random.randint(0, 120))
+        updated_return_ts = order_ts + timedelta(days=random.randint(45, 90))
         
         reason = random.choice(return_reasons)
         return_reason_code = reason_codes[reason]
         
         upsert_data.append({
             'return_id': existing_return_id,
-            'order_id': random.randint(1, orders_count),
-            'product_id': random.randint(1, 25000),
+            'order_id': order_id,
+            'product_id': product_id,
             'return_ts': updated_return_ts,
             'qty': random.randint(1, 3),
             'reason': reason,

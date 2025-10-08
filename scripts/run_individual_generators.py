@@ -183,12 +183,26 @@ def main():
             print(f"[warning] Use generate_data.py for full integrated generation of orders data.")
             rows = 0  # Skip for now
         elif ds == 'returns':
-            # Special case: returns needs orders_header count for FK references
-            orders_header_count = generated_counts.get('orders_header', 0)
-            if orders_header_count == 0:
-                row_counts = calculate_row_counts(['orders_header'], args.scale)
-                orders_header_count = row_counts.get('orders_header', 10000)  # Default fallback
-            rows = func(schema, args.scale, out_path, orders_header_count)
+            # Special case: returns needs orders directory and products CSV for FK references
+            orders_root_path = out_root / 'orders'  # Look for orders in output/orders/<partitions>
+            products_file = out_root / 'products.csv'
+            
+            # Check if products file exists
+            if not products_file.exists():
+                print(f"[warning] {ds} requires products.csv to exist at {products_file}")
+                print(f"[info] Generate products first or use generate_data.py for integrated generation")
+                rows = 0
+                continue
+            
+            # Check if orders directory exists
+            if not orders_root_path.exists():
+                print(f"[warning] {ds} requires orders directory to exist at {orders_root_path}")
+                print(f"[info] Generate orders first or use generate_data.py for integrated generation")
+                rows = 0
+                continue
+            
+            rows = func(schema, args.scale, out_path, 
+                       orders_root_path=orders_root_path, products_csv_path=products_file)
         else:
             # Standard generator signature
             rows = func(schema, args.scale, out_path)
