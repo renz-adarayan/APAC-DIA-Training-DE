@@ -9,9 +9,9 @@ TARGET_ROWS = {
     'stores': 5_000,
     'suppliers': 8_000,
     'orders_header': 1_000_000,
-    'orders_lines': 3_500_000,  # 3-4M average
+    'orders_lines': 3_000_000,
     'events': 2_000_000,
-    'sensors': 7_500_000,  # 5-10M range
+    'sensors': 5_000_000,  
     'exchange_rates': 1_100,  # ~3 years daily
     'shipments': 1_000_000,
     'returns': 100_000
