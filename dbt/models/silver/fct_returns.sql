@@ -18,19 +18,21 @@ with returns_base as (
 -- Get original order and sales information for context
 sales_context as (
   select
-    order_id,
-    product_id,
-    customer_id,
-    store_id,
-    order_ts,
-    order_date_local,
-    channel,
-    payment_method,
-    currency,
-    unit_price,
-    quantity,
-    line_total_after_discount
-  from {{ ref('fct_sales') }}
+    ol.order_id,
+    ol.product_id,
+    oh.customer_id,
+    oh.store_id,
+    oh.order_ts_utc as order_ts,
+    oh.order_date_local,
+    oh.channel,
+    oh.payment_method,
+    oh.currency,
+    ol.unit_price,
+    ol.quantity,
+    ol.line_total_after_discount
+  from {{ ref('stg_orders_lines') }} ol
+  inner join {{ ref('stg_orders_header') }} oh
+    on ol.order_id = oh.order_id
 ),
 
 enriched as (
