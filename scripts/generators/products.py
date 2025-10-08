@@ -8,10 +8,11 @@ import pyarrow as pa
 
 from utils.data_utils import apply_scale_to_targets
 from utils.schema_utils import get_column_names
-from utils.constants import TARGET_ROWS, CATEGORY_HIERARCHY, BASE_PRICE_RANGES, DATA_END_DATE
+from utils.constants import TARGET_ROWS, CATEGORY_HIERARCHY, BASE_PRICE_RANGES
 
 
-def generate_products_data(schema: pa.Schema, scale: float, output_path: Path) -> int:
+def generate_products_data(schema: pa.Schema, scale: float, output_path: Path,
+                          end_date: date = None) -> int:
     """Generate products data and write to CSV file.
     
     Args:
@@ -37,13 +38,17 @@ def generate_products_data(schema: pa.Schema, scale: float, output_path: Path) -
         writer = csv.writer(f, quoting=csv.QUOTE_MINIMAL)
         writer.writerow(product_cols)
         
+        # Use provided end_date or default
+        if end_date is None:
+            end_date = date(2024, 12, 31)
+        
         for pid in range(1, num_products + 1):
             sku = 'SKU-' + ''.join(random.choices(characters, k=6))
             cat = random.choice(categories)
             subcat = random.choice(CATEGORY_HIERARCHY[cat])
             name = f"{cat} {subcat} Item {pid}"
-            # Cap introduced date so it does not exceed 2024-12-31
-            cap_today = DATA_END_DATE
+            # Cap introduced date so it does not exceed end_date
+            cap_today = end_date
             introduced = cap_today - timedelta(days=random.randint(0, 365 * 5))
             
             # 10% discontinued products

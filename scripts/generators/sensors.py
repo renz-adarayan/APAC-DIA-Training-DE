@@ -8,16 +8,19 @@ import pyarrow as pa
 
 from utils.data_utils import apply_scale_to_targets, create_partitioned_path, ensure_dir
 from utils.schema_utils import get_column_names
-from utils.constants import TARGET_ROWS, DATA_END_DATE
+from utils.constants import TARGET_ROWS
 
 
-def generate_sensors_data(schema: pa.Schema, scale: float, output_path: Path) -> int:
+def generate_sensors_data(schema: pa.Schema, scale: float, output_path: Path,
+                         start_date: date = None, end_date: date = None) -> int:
     """Generate sensors data and write to partitioned CSV files.
     
     Args:
         schema: PyArrow schema for sensors
         scale: Scaling factor for number of records
         output_path: Base path to write the partitioned CSV files
+        start_date: Start date for data generation (defaults to 2024-01-01)
+        end_date: End date for data generation (defaults to 2024-12-31)
         
     Returns:
         int: Total number of sensor readings generated
@@ -31,9 +34,11 @@ def generate_sensors_data(schema: pa.Schema, scale: float, output_path: Path) ->
     # Sensor configuration
     reading_interval_minutes = 20  # Reading every 20 minutes
     
-    # Date range for 2024 (full year)
-    start_date = date(2024, 1, 1)
-    end_date = DATA_END_DATE
+    # Use provided dates or defaults
+    if start_date is None:
+        start_date = date(2024, 1, 1)
+    if end_date is None:
+        end_date = date(2024, 12, 31)
     
     total_records_written = 0
     

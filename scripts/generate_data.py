@@ -1,9 +1,10 @@
 # Generate synthetic raw data locally with controlled edge cases.
-# Usage: python scripts/generate_data.py --seed 42 --out data_raw
+# Usage: python scripts/generate_data.py --seed 42 --out data_raw --start-date 2024-04-01 --days 2
 import argparse
 import pathlib
 import random
 import sys
+from datetime import date, timedelta
 import numpy as np
 
 # Package import bootstrap
@@ -52,6 +53,10 @@ def parse_args():
                     help='Scaling factor for data volumes (e.g., 0.01 for 1%% of target rows)')
     ap.add_argument('--validate', action='store_true', 
                     help='Run schema validations after data generation (off by default)')
+    ap.add_argument('--start-date', type=str, default='2024-01-01',
+                    help='Start date for data generation (YYYY-MM-DD format)')
+    ap.add_argument('--days', type=int, default=365,
+                    help='Number of days to generate data for')
     return ap.parse_args()
 
 
@@ -62,6 +67,16 @@ def main():
     np.random.seed(args.seed)
     out = pathlib.Path(args.out)
     ensure_dir(out)
+
+    # Parse date arguments
+    try:
+        start_date = date.fromisoformat(args.start_date)
+    except ValueError:
+        raise ValueError(f"Invalid start date format: {args.start_date}. Please use YYYY-MM-DD format.")
+    
+    end_date = start_date + timedelta(days=args.days - 1)
+    
+    print(f"Generating data from {start_date} to {end_date} ({args.days} days)")
 
     # Centralize all raw output paths
     paths = {
@@ -81,10 +96,10 @@ def main():
     results = {}
     
     print("Generating customers data...")
-    results['customers'] = generate_customers_data(customers_schema, args.scale, paths['customers'])
+    results['customers'] = generate_customers_data(customers_schema, args.scale, paths['customers'], end_date)
     
     print("Generating products data...")
-    results['products'] = generate_products_data(products_schema, args.scale, paths['products'])
+    results['products'] = generate_products_data(products_schema, args.scale, paths['products'], end_date)
     
     print("Generating stores data...")
     results['stores'] = generate_stores_data(stores_schema, args.scale, paths['stores'])
@@ -93,8 +108,8 @@ def main():
     results['suppliers'] = generate_suppliers_data(suppliers_schema, args.scale, paths['suppliers'])
     
     print("Generating orders header data...")
-    orders_header_count, orders_per_date, start_date, num_orders, order_dates = generate_orders_header_data(
-        orders_header_schema, args.scale, out, paths['customers'], paths['stores']
+    orders_header_count, orders_per_date, start_date_returned, num_orders, order_dates = generate_orders_header_data(
+        orders_header_schema, args.scale, out, paths['customers'], paths['stores'], start_date, end_date
     )
     results['orders_header'] = orders_header_count
     
@@ -105,7 +120,7 @@ def main():
         out, 
         orders_per_date, 
         results['products'], 
-        start_date, 
+        start_date_returned, 
         num_orders, 
         order_dates,
         paths['products']
@@ -113,10 +128,10 @@ def main():
     results['orders_lines'] = orders_lines_count
 
     print("Generating events data...")
-    results['events'] = generate_events_data(events_schema, args.scale, out)
+    results['events'] = generate_events_data(events_schema, args.scale, out, start_date, end_date)
 
     print("Generating sensors data...")
-    results['sensors'] = generate_sensors_data(sensors_schema, args.scale, paths['sensors'])
+    results['sensors'] = generate_sensors_data(sensors_schema, args.scale, paths['sensors'], start_date, end_date)
 
     print("Generating exchange rates data...")
     results['exchange_rates'] = generate_exchange_rates_data(exchange_rates_schema, args.scale, paths['exchange_rates'])

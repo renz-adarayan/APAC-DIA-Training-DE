@@ -7,29 +7,33 @@ from faker import Faker
 import pyarrow as pa
 
 from utils.data_utils import apply_scale_to_targets, ensure_dir, generate_date_range
-from utils.constants import TARGET_ROWS, EVENT_TYPES, EVENT_WEIGHTS, DATA_END_DATE
+from utils.constants import TARGET_ROWS, EVENT_TYPES, EVENT_WEIGHTS
 
 
-def generate_events_data(schema: pa.Schema, scale: float, output_path: Path) -> int:
+def generate_events_data(schema: pa.Schema, scale: float, output_path: Path,
+                        start_date: date = None, end_date: date = None) -> int:
     """Generate events data and write to JSONL files with date partitioning.
-    
+
     Args:
         schema: PyArrow schema for events
         scale: Scaling factor for number of records
         output_path: Path to write the JSONL files
-        
+        start_date: Start date for data generation (defaults to 90 days before end_date)
+        end_date: End date for data generation (defaults to 2024-12-31)
+
     Returns:
         int: Number of events generated
     """
     fake = Faker('en_AU')
     num_events = apply_scale_to_targets(TARGET_ROWS['events'], scale)
-    
-    # Use centralized DATA_END_DATE constant
-    events_end_date = DATA_END_DATE
-    events_start_date = events_end_date - timedelta(days=90)
-    events_date_range = generate_date_range(events_start_date, events_end_date)
-    
-    # Create events directory
+
+    # Use provided dates or defaults
+    if end_date is None:
+        end_date = date(2024, 12, 31)
+    if start_date is None:
+        start_date = end_date - timedelta(days=90)
+        
+    events_date_range = generate_date_range(start_date, end_date)    # Create events directory
     events_dir = output_path / "events"
     ensure_dir(events_dir)
     

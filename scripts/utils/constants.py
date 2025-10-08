@@ -2,9 +2,6 @@
 
 from datetime import date
 
-# Unified data end date to ensure all generators stop at end of 2024
-DATA_END_DATE = date(2024, 12, 31)
-
 # Target row counts for each dataset
 TARGET_ROWS = {
     'customers': 80_000,

@@ -11,20 +11,26 @@ import pyarrow as pa
 
 from utils.data_utils import apply_scale_to_targets
 from utils.schema_utils import get_column_names
-from utils.constants import TARGET_ROWS, DATA_END_DATE
+from utils.constants import TARGET_ROWS
 
 
-def generate_customers_data(schema: pa.Schema, scale: float, output_path: Path) -> int:
+def generate_customers_data(schema: pa.Schema, scale: float, output_path: Path,
+                           end_date: date = None) -> int:
     """Generate customers data and write to CSV file.
     
     Args:
         schema: PyArrow schema for customers
         scale: Scaling factor for number of records
         output_path: Path to write the CSV file
+        end_date: End date for customer join timestamps (defaults to 2024-12-31)
     """
     fake = Faker('en_AU')
     num_customers = apply_scale_to_targets(TARGET_ROWS['customers'], scale)
     column_names = get_column_names(schema)
+    
+    # Use provided end_date or default
+    if end_date is None:
+        end_date = date(2024, 12, 31)
 
     # Helper to generate deliberately malformed email addresses for data quality tests
     def _malformed_email() -> str:
@@ -102,13 +108,11 @@ def generate_customers_data(schema: pa.Schema, scale: float, output_path: Path) 
             # Realistic birth date (1955-2007 per assumptions for 18-70 year olds)
             birth: date = date(1955, 1, 1) + timedelta(days=random.randint(0, 18993))  # 1955-2007
             
-            # Join timestamp capped to DATA_END_DATE (central constant)
-            year_start = datetime(DATA_END_DATE.year, 1, 1)
-            max_offset_days = (datetime(DATA_END_DATE.year, 12, 31) - year_start).days
-            join_ts: datetime = year_start + timedelta(
-                days=random.randint(0, max_offset_days),
-                seconds=random.randint(0, 86399)
-            )
+            # Join timestamp capped to provided end_date
+            year_start = datetime(end_date.year, 1, 1)
+            end_datetime = datetime(end_date.year, end_date.month, end_date.day, 23, 59, 59)
+            max_offset_seconds = int((end_datetime - year_start).total_seconds())
+            join_ts: datetime = year_start + timedelta(seconds=random.randint(0, max_offset_seconds))
             
             # Name and contact data
             first_name: str = fake.first_name()

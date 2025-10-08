@@ -11,7 +11,7 @@ from openpyxl.utils import get_column_letter
 
 from utils.data_utils import apply_scale_to_targets, generate_date_range
 from utils.schema_utils import get_column_names
-from utils.constants import TARGET_ROWS, DATA_END_DATE
+from utils.constants import TARGET_ROWS
 
 
 def generate_exchange_rates_data(schema: pa.Schema, scale: float, output_path: Path) -> int:
@@ -42,7 +42,7 @@ def generate_exchange_rates_data(schema: pa.Schema, scale: float, output_path: P
     }
     
     # Start date (3+ years ago) but cap end at 2024-12-31 to avoid 2025 spillover
-    capped_end = DATA_END_DATE
+    capped_end = date(2024, 12, 31)
     # If today is after capped_end, use capped_end; else use today (still <= capped_end)
     effective_end = min(date.today(), capped_end)
     start_date = effective_end - timedelta(days=num_days - 1)

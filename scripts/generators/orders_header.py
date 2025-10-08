@@ -25,7 +25,6 @@ from utils.constants import (
     PAYMENT_WEIGHTS,
     CURRENCIES,
     CURRENCY_WEIGHTS,
-    DATA_END_DATE
 )
 
 
@@ -49,7 +48,8 @@ def _read_ids_from_csv(file_path: Path, id_column: str) -> List[int]:
 
 
 def generate_orders_header_data(schema: pa.Schema, scale: float, output_path: Path, 
-                               customers_file_path: Path, stores_file_path: Path) -> tuple[int, dict, date, int, list[date]]:
+                               customers_file_path: Path, stores_file_path: Path,
+                               start_date: date = None, end_date: date = None) -> tuple[int, dict, date, int, list[date]]:
     """Generate orders header data with daily partitioning and write to CSV files.
     
     Args:
@@ -58,6 +58,8 @@ def generate_orders_header_data(schema: pa.Schema, scale: float, output_path: Pa
         output_path: Base path to write the partitioned CSV files
         customers_file_path: Path to customers CSV file to read actual customer IDs
         stores_file_path: Path to stores CSV file to read actual store IDs
+        start_date: Start date for data generation (defaults to 2024-01-01)
+        end_date: End date for data generation (defaults to 2024-12-31)
         
     Returns:
         tuple: (orders_count, orders_per_date, start_date, num_orders, order_dates)
@@ -65,10 +67,12 @@ def generate_orders_header_data(schema: pa.Schema, scale: float, output_path: Pa
     num_orders = apply_scale_to_targets(TARGET_ROWS['orders_header'], scale)
     orders_header_columns = get_column_names(schema)
     
-    # Date range for orders: fixed to 2024 to avoid generating 2025 data
-    end_date = DATA_END_DATE
-    # Keep ~12 months window within 2024; start at Jan 1 2024
-    start_date = date(2024, 1, 1)
+    # Use provided dates or defaults
+    if start_date is None:
+        start_date = date(2024, 1, 1)
+    if end_date is None:
+        end_date = date(2024, 12, 31)
+        
     order_dates = generate_date_range(start_date, end_date)
     
     # Distribute orders across dates with some variation (weekdays busier)
