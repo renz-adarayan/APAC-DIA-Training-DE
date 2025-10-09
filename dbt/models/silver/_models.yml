@@ -9,16 +9,18 @@ models:
     
     config:
       contract:
-        enforced: false
+        enforced: true
     
     columns:
       - name: sales_key
+        data_type: varchar
         description: "Unique identifier for each sales record (hash of order_id + line_number)"
         tests:
           - unique
           - not_null
       
       - name: order_id
+        data_type: bigint
         description: "Order identifier from order header"
         tests:
           - not_null
@@ -27,11 +29,13 @@ models:
               field: order_id
       
       - name: line_number
+        data_type: bigint
         description: "Line number within the order"
         tests:
           - not_null
       
       - name: customer_id
+        data_type: bigint
         description: "Customer identifier"
         tests:
           - not_null
@@ -42,6 +46,7 @@ models:
               error_threshold: 1.5
       
       - name: product_id
+        data_type: bigint
         description: "Product identifier"
         tests:
           - not_null
@@ -52,6 +57,7 @@ models:
               error_threshold: 1.5
       
       - name: store_id
+        data_type: bigint
         description: "Store identifier"
         tests:
           - not_null
@@ -62,34 +68,35 @@ models:
               error_threshold: 1.5
       
       - name: order_ts
+        data_type: TIMESTAMP WITH TIME ZONE
         description: "Order timestamp"
         tests:
           - not_null
       
       - name: order_date_local
+        data_type: date
         description: "Order date in local timezone"
         tests:
           - not_null
       
-      - name: quantity
-        description: "Quantity of items ordered"
-        tests:
-          - not_null
+      - name: order_month
+        data_type: date
+        description: "Order month (first day of month)"
       
-      - name: unit_price
-        description: "Unit price of the product"
-        tests:
-          - not_null
+      - name: order_year
+        data_type: date
+        description: "Order year (first day of year)"
       
-      - name: line_total_after_discount
-        description: "Line total after applying discounts"
-        tests:
-          - not_null
+      - name: order_day_of_week
+        data_type: bigint
+        description: "Day of week (0=Sunday, 6=Saturday)"
       
-      - name: line_discount_pct
-        description: "Line discount percentage"
+      - name: order_hour
+        data_type: bigint
+        description: "Hour of day (0-23)"
       
       - name: channel
+        data_type: varchar
         description: "Sales channel"
         tests:
           - not_null
@@ -97,20 +104,81 @@ models:
               values: ['web', 'pos']
       
       - name: payment_method
+        data_type: varchar
         description: "Payment method used"
         tests:
           - not_null
           - accepted_values:
               values: ['credit_card', 'debit_card', 'paypal', 'cash', 'buy_now_pay_later']
       
+      - name: coupon_code
+        data_type: varchar
+        description: "Coupon code applied"
+      
       - name: currency
+        data_type: varchar
         description: "Currency code"
         tests:
           - not_null
           - accepted_values:
               values: ['aud', 'usd', 'eur']
       
+      - name: quantity
+        data_type: integer
+        description: "Quantity of items ordered"
+        tests:
+          - not_null
+      
+      - name: unit_price
+        data_type: decimal(10,2)
+        description: "Unit price of the product"
+        tests:
+          - not_null
+      
+      - name: line_discount_pct
+        data_type: decimal(5,2)
+        description: "Line discount percentage"
+      
+      - name: tax_pct
+        data_type: decimal(5,2)
+        description: "Tax percentage"
+      
+      - name: line_total_before_discount
+        data_type: decimal(18,2)
+        description: "Line total before discount"
+      
+      - name: line_total_after_discount
+        data_type: double
+        description: "Line total after applying discounts"
+        tests:
+          - not_null
+      
+      - name: line_discount_amount
+        data_type: double
+        description: "Discount amount"
+      
+      - name: line_tax_amount
+        data_type: double
+        description: "Tax amount"
+      
+      - name: line_total_with_tax
+        data_type: double
+        description: "Line total including tax"
+      
+      - name: allocated_shipping_fee
+        data_type: double
+        description: "Shipping fee allocated to this line"
+      
+      - name: ingestion_ts
+        data_type: TIMESTAMP WITH TIME ZONE
+        description: "Ingestion timestamp from source"
+      
+      - name: dbt_updated_at
+        data_type: TIMESTAMP WITH TIME ZONE
+        description: "dbt processing timestamp"
+      
       - name: discount_flag
+        data_type: varchar
         description: "Flag indicating if discount was applied"
         tests:
           - not_null
@@ -118,6 +186,7 @@ models:
               values: ['Discounted', 'Full Price']
       
       - name: quantity_tier
+        data_type: varchar
         description: "Categorization of order quantity"
         tests:
           - not_null
@@ -125,6 +194,7 @@ models:
               values: ['Single Item', 'Small Quantity', 'Medium Quantity', 'Bulk Order']
       
       - name: day_type
+        data_type: varchar
         description: "Weekend or weekday classification"
         tests:
           - not_null
@@ -132,7 +202,6 @@ models:
               values: ['Weekend', 'Weekday']
 
     tests:
-      # Test that order_id + line_number combination is unique
       - unique:
           column_name: "order_id || '-' || line_number"
 
@@ -145,22 +214,25 @@ models:
     
     config:
       contract:
-        enforced: false
+        enforced: true
     
     columns:
       - name: return_key
+        data_type: varchar
         description: "Unique identifier for each return record (hash of return_id)"
         tests:
           - unique
           - not_null
       
       - name: return_id
+        data_type: bigint
         description: "Return identifier from returns system"
         tests:
           - unique
           - not_null
       
       - name: order_id
+        data_type: bigint
         description: "Original order identifier"
         tests:
           - not_null
@@ -169,6 +241,7 @@ models:
               field: order_id
       
       - name: product_id
+        data_type: bigint
         description: "Product identifier"
         tests:
           - not_null
@@ -179,16 +252,18 @@ models:
               error_threshold: 1.5
       
       - name: customer_id
+        data_type: bigint
         description: "Customer identifier from original sale"
         tests:
           - fk_violation_rate:
               to: ref('stg_customers')
               field: customer_id
-              max_violation_rate: 2.5
-              error_threshold: 5.0
+              max_violation_rate: 1
+              error_threshold: 1.5
               severity: warn
       
       - name: store_id
+        data_type: bigint
         description: "Store identifier from original sale"
         tests:
           - fk_violation_rate:
@@ -198,67 +273,135 @@ models:
               error_threshold: 1.5
       
       - name: return_ts
+        data_type: TIMESTAMP WITH TIME ZONE
         description: "Return timestamp"
         tests:
           - not_null
       
       - name: return_date
+        data_type: date
         description: "Return date"
         tests:
           - not_null
       
+      - name: return_month
+        data_type: TIMESTAMP WITH TIME ZONE
+        description: "Return month"
+      
+      - name: return_year
+        data_type: TIMESTAMP WITH TIME ZONE
+        description: "Return year"
+      
+      - name: return_day_of_week
+        data_type: bigint
+        description: "Day of week for return"
+      
+      - name: return_hour
+        data_type: bigint
+        description: "Hour of day for return"
+      
+      - name: order_ts
+        data_type: TIMESTAMP WITH TIME ZONE
+        description: "Original order timestamp"
+      
+      - name: order_date_local
+        data_type: date
+        description: "Original order date"
+      
+      - name: channel
+        data_type: varchar
+        description: "Sales channel"
+      
+      - name: payment_method
+        data_type: varchar
+        description: "Payment method"
+      
+      - name: currency
+        data_type: varchar
+        description: "Currency code"
+      
       - name: quantity_returned
+        data_type: integer
         description: "Quantity of items returned"
         tests:
           - not_null
       
       - name: reason
+        data_type: varchar
         description: "Return reason description"
         tests:
           - not_null
       
-      - name: return_category
-        description: "Categorized return reason"
-        tests:
-          - not_null
-          - accepted_values:
-              values: ['Product Defect', 'Size/Fit Issue', 'Not as Expected', 'Changed Mind', 'Duplicate Order', 'Other']
+      - name: return_reason_code
+        data_type: varchar
+        description: "Return reason code"
       
-      - name: return_completeness
-        description: "Whether return is full, partial, or over"
-        tests:
-          - not_null
-          - accepted_values:
-              values: ['Full Return', 'Partial Return', 'Over Return', 'Unknown Completeness']
+      - name: original_unit_price
+        data_type: double
+        description: "Original unit price"
+      
+      - name: original_quantity_ordered
+        data_type: hugeint
+        description: "Original quantity ordered"
+      
+      - name: original_line_total
+        data_type: double
+        description: "Original line total"
+      
+      - name: return_amount_gross
+        data_type: double
+        description: "Return amount gross"
+      
+      - name: days_to_return
+        data_type: bigint
+        description: "Number of days between order and return"
       
       - name: return_timing_category
+        data_type: varchar
         description: "Categorization based on days between order and return"
         tests:
           - not_null
           - accepted_values:
               values: ['Quick Return (≤7 days)', 'Standard Return (8-30 days)', 'Late Return (31-90 days)', 'Very Late Return (>90 days)', 'Unknown Timing']
       
+      - name: return_completeness
+        data_type: varchar
+        description: "Whether return is full, partial, or over"
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Full Return', 'Partial Return', 'Over Return', 'Unknown Completeness']
+      
+      - name: return_percentage
+        data_type: double
+        description: "Percentage of original quantity returned"
+      
+      - name: return_category
+        data_type: varchar
+        description: "Categorized return reason"
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Product Defect', 'Size/Fit Issue', 'Not as Expected', 'Changed Mind', 'Duplicate Order', 'Other']
+      
       - name: return_day_type
+        data_type: varchar
         description: "Weekend or weekday classification"
         tests:
           - not_null
           - accepted_values:
               values: ['Weekend', 'Weekday']
       
-      - name: return_value_tier
-        description: "Value tier based on return amount"
-        tests:
-          - not_null
-          - accepted_values:
-              values: ['High Value Return', 'Medium Value Return', 'Low Value Return']
+      - name: ingestion_ts
+        data_type: TIMESTAMP WITH TIME ZONE
+        description: "Ingestion timestamp"
       
-      - name: days_to_return
-        description: "Number of days between order and return"
-      
-      - name: return_percentage
-        description: "Percentage of original quantity returned"
+      - name: dbt_updated_at
+        data_type: TIMESTAMP WITH TIME ZONE
+        description: "dbt processing timestamp"
       
       - name: is_quality_issue
+        data_type: boolean
         description: "Flag indicating if return is due to product quality"
         tests:
           - not_null
@@ -266,8 +409,208 @@ models:
               values: [true, false]
       
       - name: is_immediate_return
+        data_type: boolean
         description: "Flag indicating if return happened within 1 day"
         tests:
           - not_null
           - accepted_values:
               values: [true, false]
+      
+      - name: return_value_tier
+        data_type: varchar
+        description: "Value tier based on return amount"
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['High Value Return', 'Medium Value Return', 'Low Value Return']
+
+  - name: fct_shipments
+    description: >
+      Shipments fact table with logistics and delivery performance metrics.
+      Grain: One row per shipment (shipment_id).
+      Updates incrementally based on shipped_at_utc for new/updated shipments.
+    
+    config:
+      contract:
+        enforced: true
+    
+    columns:
+      - name: shipment_key
+        data_type: varchar
+        description: "Unique identifier for each shipment record"
+        tests:
+          - unique
+          - not_null
+      
+      - name: shipment_id
+        data_type: bigint
+        description: "Shipment identifier"
+        tests:
+          - unique
+          - not_null
+      
+      - name: order_id
+        data_type: bigint
+        description: "Order identifier"
+        tests:
+          - not_null
+      
+      - name: customer_id
+        data_type: bigint
+        description: "Customer identifier"
+      
+      - name: store_id
+        data_type: bigint
+        description: "Store identifier"
+      
+      - name: shipped_at
+        data_type: TIMESTAMP WITH TIME ZONE
+        description: "Shipment timestamp"
+      
+      - name: shipped_date
+        data_type: date
+        description: "Shipment date"
+      
+      - name: shipped_month
+        data_type: TIMESTAMP WITH TIME ZONE
+        description: "Shipment month"
+      
+      - name: shipped_year
+        data_type: TIMESTAMP WITH TIME ZONE
+        description: "Shipment year"
+      
+      - name: shipped_day_of_week
+        data_type: bigint
+        description: "Day of week for shipment"
+      
+      - name: shipped_hour
+        data_type: bigint
+        description: "Hour of day for shipment"
+      
+      - name: delivered_at
+        data_type: TIMESTAMP WITH TIME ZONE
+        description: "Delivery timestamp"
+      
+      - name: delivered_date
+        data_type: date
+        description: "Delivery date"
+      
+      - name: delivered_month
+        data_type: TIMESTAMP WITH TIME ZONE
+        description: "Delivery month"
+      
+      - name: delivered_day_of_week
+        data_type: bigint
+        description: "Day of week for delivery"
+      
+      - name: delivered_hour
+        data_type: bigint
+        description: "Hour of day for delivery"
+      
+      - name: order_ts
+        data_type: TIMESTAMP WITH TIME ZONE
+        description: "Order timestamp"
+      
+      - name: order_date_local
+        data_type: date
+        description: "Order date"
+      
+      - name: channel
+        data_type: varchar
+        description: "Sales channel"
+      
+      - name: payment_method
+        data_type: varchar
+        description: "Payment method"
+      
+      - name: currency
+        data_type: varchar
+        description: "Currency code"
+      
+      - name: shipping_fee
+        data_type: decimal(10,2)
+        description: "Shipping fee"
+      
+      - name: order_final_total
+        data_type: double
+        description: "Order final total"
+      
+      - name: carrier
+        data_type: varchar
+        description: "Shipping carrier"
+      
+      - name: ship_cost
+        data_type: decimal(10,2)
+        description: "Shipping cost"
+      
+      - name: delivery_days
+        data_type: bigint
+        description: "Days to deliver"
+      
+      - name: delivery_hours
+        data_type: bigint
+        description: "Hours to deliver"
+      
+      - name: days_to_ship
+        data_type: bigint
+        description: "Days to ship from order"
+      
+      - name: hours_to_ship
+        data_type: bigint
+        description: "Hours to ship from order"
+      
+      - name: total_fulfillment_days
+        data_type: bigint
+        description: "Total days from order to delivery"
+      
+      - name: delivery_status
+        data_type: varchar
+        description: "Delivery status"
+      
+      - name: delivery_speed_category
+        data_type: varchar
+        description: "Delivery speed categorization"
+      
+      - name: shipping_speed_category
+        data_type: varchar
+        description: "Shipping speed categorization"
+      
+      - name: shipped_day_type
+        data_type: varchar
+        description: "Weekend or weekday for shipment"
+      
+      - name: delivered_day_type
+        data_type: varchar
+        description: "Weekend or weekday for delivery"
+      
+      - name: shipping_cost_variance
+        data_type: decimal(11,2)
+        description: "Variance between shipping cost and fee"
+      
+      - name: shipping_cost_percentage
+        data_type: double
+        description: "Shipping cost as percentage of order total"
+      
+      - name: ingestion_ts
+        data_type: TIMESTAMP WITH TIME ZONE
+        description: "Ingestion timestamp"
+      
+      - name: dbt_updated_at
+        data_type: TIMESTAMP WITH TIME ZONE
+        description: "dbt processing timestamp"
+      
+      - name: is_express_delivery
+        data_type: boolean
+        description: "Flag for express delivery"
+      
+      - name: is_same_day_ship
+        data_type: boolean
+        description: "Flag for same day shipping"
+      
+      - name: is_potentially_lost
+        data_type: boolean
+        description: "Flag for potentially lost shipments"
+      
+      - name: shipping_cost_tier
+        data_type: varchar
+        description: "Shipping cost tier categorization"
