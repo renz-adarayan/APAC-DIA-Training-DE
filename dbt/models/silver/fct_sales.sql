@@ -76,11 +76,9 @@ joined as (
     on ol.order_id = oh.order_id
     
   {% if is_incremental() %}
-    -- Incremental filter: only process orders with timestamps greater than current max
-    where oh.order_ts_utc > (
-      select coalesce(max(order_ts), '1970-01-01'::timestamp) 
-      from {{ this }}
-    )
+    -- Incremental filter with lookback window for late-arriving data
+    -- Processes records from (max timestamp - 48 hours) to handle out-of-order arrivals
+    where {{ incremental_watermark_with_lookback('oh.order_ts_utc', var('silver_lookback_hours', 48)) }}
   {% endif %}
 ),
 

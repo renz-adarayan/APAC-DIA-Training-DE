@@ -175,11 +175,9 @@ enriched as (
     on s.order_id = o.order_id
     
   {% if is_incremental() %}
-    -- Incremental filter: only process shipments with timestamps greater than current max
-    where s.shipped_at_utc > (
-      select coalesce(max(shipped_at), '1970-01-01'::timestamp) 
-      from {{ this }}
-    )
+    -- Incremental filter with lookback window for late-arriving data
+    -- Processes records from (max timestamp - 48 hours) to handle out-of-order arrivals
+    where {{ incremental_watermark_with_lookback('s.shipped_at_utc', var('silver_lookback_hours', 48)) }}
   {% endif %}
 ),
 

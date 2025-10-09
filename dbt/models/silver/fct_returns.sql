@@ -151,11 +151,9 @@ enriched as (
     and r.product_id = s.product_id
     
   {% if is_incremental() %}
-    -- Incremental filter: only process returns with timestamps greater than current max
-    where r.return_ts_utc > (
-      select coalesce(max(return_ts), '1970-01-01'::timestamp) 
-      from {{ this }}
-    )
+    -- Incremental filter with lookback window for late-arriving data
+    -- Processes records from (max timestamp - 48 hours) to handle out-of-order arrivals
+    where {{ incremental_watermark_with_lookback('r.return_ts_utc', var('silver_lookback_hours', 48)) }}
   {% endif %}
 ),
 
