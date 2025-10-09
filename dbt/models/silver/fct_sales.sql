@@ -11,7 +11,11 @@
 -- Grain: One row per order line (order_id + line_number)
 -- Incremental strategy: Filter on order_ts from header for new/updated orders
 
-with order_lines as (
+with {% if is_incremental() %}
+{{ incremental_watermark_with_lookback_cte('order_ts', var('silver_lookback_hours', 48)) }},
+{% endif %}
+
+order_lines as (
   select * from {{ ref('stg_orders_lines') }}
 ),
 

@@ -11,7 +11,11 @@
 -- Grain: One row per returned item (return_id)
 -- Incremental strategy: Filter on return_ts_utc for new/updated returns
 
-with returns_base as (
+with {% if is_incremental() %}
+{{ incremental_watermark_with_lookback_cte('return_ts', var('silver_lookback_hours', 48)) }},
+{% endif %}
+
+returns_base as (
   select * from {{ ref('stg_returns') }}
 ),
 

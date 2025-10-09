@@ -11,7 +11,11 @@
 -- Grain: One row per shipment (shipment_id)
 -- Incremental strategy: Filter on shipped_at_utc for new/updated shipments
 
-with shipments_base as (
+with {% if is_incremental() %}
+{{ incremental_watermark_with_lookback_cte('shipped_at', var('silver_lookback_hours', 48)) }},
+{% endif %}
+
+shipments_base as (
   select * from {{ ref('stg_shipments') }}
 ),
 
