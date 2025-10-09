@@ -1,95 +1,220 @@
-
-version: 1
+version: 2
 
 models:
   - name: stg_customers
+    config:
+      contract:
+        enforced: true
     columns:
       - name: customer_id
+        data_type: bigint
         tests:
           - unique
           - not_null
       - name: natural_key
+        data_type: varchar
         tests:
           - unique
           - not_null
+      - name: first_name
+        data_type: varchar
+      - name: last_name
+        data_type: varchar
       - name: email_normalized
+        data_type: varchar
         tests:
           - email_format
-      - name: is_email_valid
-        tests:
-          - accepted_values:
-              values: [true, false]
+      - name: phone
+        data_type: varchar
+      - name: address_line1
+        data_type: varchar
+      - name: address_line2
+        data_type: varchar
+      - name: city
+        data_type: varchar
+      - name: state_region
+        data_type: varchar
+      - name: postcode
+        data_type: varchar
+      - name: country_code
+        data_type: varchar
       - name: latitude
+        data_type: double
         tests:
           - latitude_range
       - name: longitude
+        data_type: double
         tests:
           - longitude_range
+      - name: birth_date
+        data_type: date
+      - name: age_years
+        data_type: double
+      - name: join_ts_utc
+        data_type: TIMESTAMP WITH TIME ZONE
+      - name: customer_tenure_days
+        data_type: bigint
+      - name: generation
+        data_type: varchar
+      - name: customer_lifecycle_stage
+        data_type: varchar
+      - name: is_vip
+        data_type: boolean
+      - name: gdpr_consent
+        data_type: boolean
+      - name: is_email_valid
+        data_type: boolean
+        tests:
+          - accepted_values:
+              values: [true, false]
+      - name: src_filename
+        data_type: varchar
+      - name: src_row_hash
+        data_type: varchar
+      - name: ingestion_ts
+        data_type: TIMESTAMP WITH TIME ZONE
 
   - name: stg_products
+    config:
+      contract:
+        enforced: true
     columns:
       - name: product_id
+        data_type: bigint
         tests:
           - unique
           - not_null
       - name: sku
+        data_type: varchar
       - name: product_name
+        data_type: varchar
       - name: current_price
+        data_type: decimal(10,2)
+      - name: currency
+        data_type: varchar
       - name: category
+        data_type: varchar
         tests:
           - accepted_values:
               values: ['apparel', 'beauty', 'electronics', 'home', 'sports']
       - name: subcategory
+        data_type: varchar
         tests:
           - accepted_values:
               values: ['audio', 'decor', 'fitness', 'furniture', 'gaming', 'hair', 'kids', 'kitchen', 'laptops', 'makeup', 'mens', 'outdoor', 'phones', 'skincare', 'team', 'womens']
+      - name: introduced_dt
+        data_type: date
+      - name: discontinued_dt
+        data_type: date
+      - name: is_discontinued
+        data_type: boolean
+      - name: product_age_days
+        data_type: bigint
+      - name: product_lifecycle_stage
+        data_type: varchar
+      - name: price_tier
+        data_type: varchar
+      - name: product_status
+        data_type: varchar
+      - name: src_filename
+        data_type: varchar
+      - name: src_row_hash
+        data_type: varchar
+      - name: ingestion_ts
+        data_type: TIMESTAMP WITH TIME ZONE
 
   - name: stg_stores
+    config:
+      contract:
+        enforced: true
     columns:
       - name: store_id
+        data_type: bigint
         tests:
           - unique
           - not_null
       - name: store_code
+        data_type: varchar
       - name: store_name
-      - name: latitude
-        tests:
-          - latitude_range
-      - name: longitude
-        tests:
-          - longitude_range
+        data_type: varchar
       - name: channel
+        data_type: varchar
         tests:
           - accepted_values:
               values: ['web', 'pos']
       - name: region
-      - name: state
-      - name: open_dt
-      - name: close_dt
+        data_type: varchar
+      - name: state_region
+        data_type: varchar
+      - name: latitude
+        data_type: double
+        tests:
+          - latitude_range
+      - name: longitude
+        data_type: double
+        tests:
+          - longitude_range
+      - name: opened_date
+        data_type: date
+      - name: closed_date
+        data_type: date
+      - name: store_age_days
+        data_type: bigint
+      - name: store_maturity
+        data_type: varchar
+      - name: store_status
+        data_type: varchar
+      - name: store_type_category
+        data_type: varchar
       - name: src_filename
+        data_type: varchar
       - name: src_row_hash
+        data_type: varchar
       - name: ingestion_ts
+        data_type: TIMESTAMP WITH TIME ZONE
 
   - name: stg_suppliers
+    config:
+      contract:
+        enforced: true
     columns:
       - name: supplier_id
+        data_type: bigint
         tests:
           - unique
           - not_null
       - name: supplier_code
+        data_type: varchar
+      - name: supplier_name
+        data_type: varchar
+      - name: country_code
+        data_type: varchar
+      - name: lead_time_days
+        data_type: integer
       - name: is_preferred
+        data_type: boolean
         tests:
           - accepted_values:
               values: [true, false]
-      - name: name
+      - name: src_filename
+        data_type: varchar
+      - name: src_row_hash
+        data_type: varchar
+      - name: ingestion_ts
+        data_type: TIMESTAMP WITH TIME ZONE
 
   - name: stg_orders_header
+    config:
+      contract:
+        enforced: true
     columns:
       - name: order_id
+        data_type: bigint
         tests:
           - unique
           - not_null
       - name: customer_id
+        data_type: bigint
         tests:
           - fk_violation_rate:
               to: ref('stg_customers')
@@ -97,21 +222,70 @@ models:
               max_violation_rate: 1.0
               error_threshold: 1.5
       - name: store_id
+        data_type: bigint
         tests:
           - fk_violation_rate:
               to: ref('stg_stores')
               field: store_id
               max_violation_rate: 1.0
               error_threshold: 1.5
+      - name: order_ts_utc
+        data_type: TIMESTAMP WITH TIME ZONE
+      - name: order_date_local
+        data_type: date
       - name: channel
+        data_type: varchar
+      - name: payment_method
+        data_type: varchar
+      - name: coupon_code
+        data_type: varchar
+      - name: shipping_fee
+        data_type: decimal(10,2)
+      - name: currency
+        data_type: varchar
+      - name: order_subtotal
+        data_type: decimal(38,2)
+      - name: order_discount_amount
+        data_type: double
+      - name: order_tax_amount
+        data_type: double
+      - name: order_final_total
+        data_type: double
+      - name: total_items
+        data_type: hugeint
       - name: order_value_tier
+        data_type: varchar
         tests:
           - accepted_values:
               values: ['high_value', 'medium_value', 'low_value']
+      - name: has_coupon
+        data_type: boolean
+      - name: overall_discount_percentage
+        data_type: double
+      - name: order_hour
+        data_type: bigint
+      - name: order_day_of_week
+        data_type: bigint
+      - name: order_time_of_day
+        data_type: varchar
+      - name: order_day_type
+        data_type: varchar
+      - name: basket_size_category
+        data_type: varchar
+      - name: src_filename
+        data_type: varchar
+      - name: src_row_hash
+        data_type: varchar
+      - name: ingestion_ts
+        data_type: TIMESTAMP WITH TIME ZONE
 
   - name: stg_orders_lines
+    config:
+      contract:
+        enforced: true
     columns:
       - name: order_id
+        data_type: bigint
         tests:
           - not_null
           - relationships:
@@ -123,36 +297,90 @@ models:
               max_violation_rate: 1.0
               error_threshold: 1.5
       - name: line_number
+        data_type: bigint
         tests:
           - not_null
       - name: product_id
+        data_type: bigint
         tests:
           - fk_violation_rate:
               to: ref('stg_products')
               field: product_id
               max_violation_rate: 1.0
               error_threshold: 1.5
+      - name: quantity
+        data_type: integer
+      - name: unit_price
+        data_type: decimal(10,2)
+        tests:
+          - not_null
+      - name: line_discount_pct
+        data_type: decimal(5,2)
+        tests:
+          - discount_percentage
+      - name: tax_pct
+        data_type: decimal(5,2)
+      - name: line_total_before_discount
+        data_type: decimal(18,2)
+      - name: line_total_after_discount
+        data_type: double
       - name: order_line_business_key
+        data_type: varchar
         tests:
           - unique
           - not_null
-      - name: line_discount_pct
-        tests:
-          - discount_percentage
-      - name: unit_price
+      - name: src_filename
+        data_type: varchar
+      - name: src_row_hash
+        data_type: varchar
+      - name: ingestion_ts
+        data_type: TIMESTAMP WITH TIME ZONE
 
   - name: stg_events
+    config:
+      contract:
+        enforced: true
     columns:
       - name: event_id
+        data_type: varchar
         tests:
           - unique
+      - name: event_ts_utc
+        data_type: TIMESTAMP WITH TIME ZONE
+      - name: event_type
+        data_type: varchar
+      - name: user_id
+        data_type: bigint
+      - name: session_id
+        data_type: varchar
+      - name: product_id
+        data_type: bigint
+      - name: page_url
+        data_type: varchar
+      - name: device_type
+        data_type: varchar
+      - name: browser
+        data_type: varchar
+      - name: ip_address
+        data_type: varchar
+      - name: src_filename
+        data_type: varchar
+      - name: src_row_hash
+        data_type: varchar
+      - name: ingestion_ts
+        data_type: TIMESTAMP WITH TIME ZONE
 
   - name: stg_sensors
+    config:
+      contract:
+        enforced: true
     columns:
       - name: sensor_ts_utc
+        data_type: TIMESTAMP WITH TIME ZONE
         tests:
           - not_null
       - name: store_id
+        data_type: bigint
         tests:
           - fk_violation_rate:
               to: ref('stg_stores')
@@ -160,47 +388,104 @@ models:
               max_violation_rate: 1.0
               error_threshold: 1.5
       - name: shelf_id
+        data_type: varchar
       - name: temperature_celsius
+        data_type: double
         tests:
           - not_null
       - name: humidity_percent
+        data_type: double
         tests:
           - not_null
+      - name: battery_millivolts
+        data_type: integer
+      - name: is_temperature_out_of_range
+        data_type: boolean
+      - name: is_humidity_out_of_range
+        data_type: boolean
       - name: has_sensor_anomaly
+        data_type: boolean
         tests:
           - accepted_values:
               values: [true, false]
+      - name: sensor_reading_key
+        data_type: varchar
+      - name: src_filename
+        data_type: varchar
+      - name: src_row_hash
+        data_type: varchar
+      - name: ingestion_ts
+        data_type: TIMESTAMP WITH TIME ZONE
 
   - name: stg_exchange_rates
+    config:
+      contract:
+        enforced: true
     columns:
-      - name: currency_code
-        tests:
-          - not_null
       - name: rate_date
+        data_type: date
         tests:
           - not_null
+      - name: currency_code
+        data_type: varchar
+        tests:
+          - not_null
+      - name: rate_to_aud
+        data_type: decimal(12,6)
+      - name: exchange_rate_key
+        data_type: varchar
+      - name: src_filename
+        data_type: varchar
+      - name: src_row_hash
+        data_type: varchar
+      - name: ingestion_ts
+        data_type: TIMESTAMP WITH TIME ZONE
 
   - name: stg_shipments
+    config:
+      contract:
+        enforced: true
     columns:
       - name: shipment_id
+        data_type: bigint
         tests:
           - unique
           - not_null
       - name: order_id
+        data_type: bigint
         tests:
           - fk_violation_rate:
               to: ref('stg_orders_header')
               field: order_id
               max_violation_rate: 1.0
               error_threshold: 1.5
+      - name: carrier
+        data_type: varchar
+      - name: shipped_at_utc
+        data_type: TIMESTAMP WITH TIME ZONE
+      - name: delivered_at_utc
+        data_type: TIMESTAMP WITH TIME ZONE
+      - name: ship_cost
+        data_type: decimal(10,2)
+      - name: src_filename
+        data_type: varchar
+      - name: src_row_hash
+        data_type: varchar
+      - name: ingestion_ts
+        data_type: TIMESTAMP WITH TIME ZONE
 
   - name: stg_returns
+    config:
+      contract:
+        enforced: true
     columns:
       - name: return_id
+        data_type: bigint
         tests:
           - unique
           - not_null
       - name: order_id
+        data_type: bigint
         tests:
           - relationships:
               to: ref('stg_orders_header')
@@ -211,9 +496,24 @@ models:
               max_violation_rate: 1.0
               error_threshold: 1.5
       - name: product_id
+        data_type: bigint
         tests:
           - fk_violation_rate:
               to: ref('stg_products')
               field: product_id
               max_violation_rate: 1.0
               error_threshold: 1.5
+      - name: return_ts_utc
+        data_type: TIMESTAMP WITH TIME ZONE
+      - name: quantity_returned
+        data_type: integer
+      - name: reason
+        data_type: varchar
+      - name: return_reason_code
+        data_type: varchar
+      - name: src_filename
+        data_type: varchar
+      - name: src_row_hash
+        data_type: varchar
+      - name: ingestion_ts
+        data_type: TIMESTAMP WITH TIME ZONE
