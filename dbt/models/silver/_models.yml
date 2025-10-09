@@ -18,6 +18,8 @@ models:
         tests:
           - unique
           - not_null
+          - incremental_duplicates:
+              column_name: sales_key
       
       - name: order_id
         data_type: bigint
@@ -223,6 +225,8 @@ models:
         tests:
           - unique
           - not_null
+          - incremental_duplicates:
+              column_name: return_key
       
       - name: return_id
         data_type: bigint
@@ -441,6 +445,8 @@ models:
         tests:
           - unique
           - not_null
+          - incremental_duplicates:
+              column_name: shipment_key
       
       - name: shipment_id
         data_type: bigint
