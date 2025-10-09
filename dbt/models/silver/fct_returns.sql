@@ -2,7 +2,7 @@
   config(
     materialized='incremental',
     unique_key='return_key',
-    on_schema_change='merge',
+    on_schema_change='append_new_columns',
     tags=['silver', 'fact']
   )
 }}
