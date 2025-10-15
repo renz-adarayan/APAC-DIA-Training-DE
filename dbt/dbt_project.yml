@@ -33,3 +33,21 @@ models:
       +schema: silver
     gold:
       +schema: gold
+
+seeds:
+  local_de_assessment:
+    au_holidays:
+      +column_types:
+        holiday_date: date
+        holiday_name: varchar
+        country: varchar
+    us_holidays:
+      +column_types:
+        holiday_date: date
+        holiday_name: varchar
+        country: varchar
+    uk_holidays:
+      +column_types:
+        holiday_date: date
+        holiday_name: varchar
+        country: varchar
