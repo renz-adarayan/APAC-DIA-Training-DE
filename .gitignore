@@ -190,3 +190,7 @@ lake/bronze/delta/*
 
 # Include your Power BI file
 # Comment out: analytics/*.pbix
+
+
+# DBT packages
+dbt_packages/
