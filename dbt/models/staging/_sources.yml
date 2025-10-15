@@ -178,3 +178,12 @@ sources:
           - name: src_filename
           - name: src_row_hash
           - name: ingestion_ts
+
+  - name: manifest
+    description: "Bronze ingestion manifest tracking"
+    database: warehouse
+    schema: main
+    tables:
+      - name: processed_files
+        identifier: manifest_processed_files
+        description: "Tracks all processed files with ingestion metrics"
